@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>X 探针 · 补历史 / 改数</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #101418; color: #e6e8ea; font: 14px/1.6 ui-monospace, Consolas, monospace; padding: 16px 20px 24px; }
+  h1 { font-size: 16px; margin: 0 0 4px; color: #7ec3e8; }
+  h1 .who { color: #e6e8ea; }
+  .sub { color: #7c858d; font-size: 12px; margin-bottom: 10px; }
+  .err { color: #e06c60; font-size: 12px; min-height: 18px; margin-bottom: 6px; white-space: pre-wrap; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-top: 1px solid #1b2026; padding: 6px 8px; text-align: left; }
+  th { color: #7c858d; font-size: 12px; border-top: 0; }
+  td.day { color: #9aa4ad; white-space: nowrap; }
+  input { background: #10151b; color: #c9d1d9; border: 1px solid #2b333b; border-radius: 4px; padding: 5px 8px; font: 14px ui-monospace, Consolas, monospace; width: 150px; }
+  input[type="date"] { width: 170px; }
+  button { background: #2b333b; color: #e6e8ea; border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; font: 13px ui-monospace, Consolas, monospace; }
+  button:hover { background: #3a454f; }
+  button.save { background: #233038; color: #7ec3e8; }
+  button.del { background: #3a2b2b; color: #e06c60; }
+  .tip { color: #7c858d; font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>补历史 / 改数 <span class="who" id="who"></span></h1>
+  <div class="sub" id="sub">总曝光 = 账号分析页的每日曝光；有效曝光 = 奖励页那个 90 天滚动累计读数照抄（面板显示时自动和前一天相减得出当日数，转化率 = 当日差分 ÷ 当日总曝光）。
+    空框 = 不动那列；缩写也能填（13.2K / 1.3万 → 换算成整数、行上标 ~ 非精确）。</div>
+  <div class="err" id="err"></div>
+  <table id="grid"></table>
+  <div class="tip" id="tip">每一行改完（离开输入框或按回车）就自动写进本机库（同一天按列合并，空框不动那列）；「删」整行删除。
+    补历史用表格下方的「+」行：默认自动取表里最早那天的前一日（不用手选，也能改）、存完日期自动 −1，往前连补一路点加号；顶部「加」是往后补（+1）。
+    两个日期框也都能直接改成任何过去的日子。补完回到面板，「我的」页四张折线（含转化率）会跟着长。</div>
+  <script src="editor.js"></script>
+</body>
+</html>

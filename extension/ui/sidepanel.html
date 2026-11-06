@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>X 观测探针</title>
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<header>
+  <div id="title">X 观测探针</div>
+  <select id="tabPick" title="选择要读取哪个 x.com 标签页"><option value="">（活动标签页）</option></select>
+</header>
+
+<div id="viewPick">
+  <button id="vHome" type="button" class="on">首页</button>
+  <button id="vMine" type="button" title="我自己的历史：分钟线 / 曝光日线 / 三四列日线 + 可编辑日点表">我的</button>
+  <button id="vPlaza" type="button" title="广场：直接读本机库 xprobe.db —— 账号榜 + 帖子榜（曝光/互动/增速）+ 最该关注/取关建议；选中某个人还能看/改他那一口日点表">广场</button>
+  <button id="vFc" type="button" title="预测：粉丝数折线 + 到 5,000 / 10,000 的两条外推（A 全期拟合 / B 近3天节奏）。吃的是日点表的粉丝列，分钟点/补录/回填一有新点，900ms 回读时自动重算">预测</button>
+  <button id="vDebug" type="button" class="hide" title="诊断视图：读数质量、存储占用、命中率、漏抓清单与原文折叠。先在「设置」里打开诊断模式">诊断</button>
+  <button id="vSet" type="button">设置</button>
+</div>
+
+<div id="coolBar" class="cool ok hide" title="60 秒冷却：一次关注完成后至少等 60 秒再做下一个（只警告，不拦点击）"></div>
+
+<!-- 首页：只留高频三键 -->
+<div id="barHome" class="bar">
+  <button id="bCollect" type="button" class="btnPri">采集本页</button>
+  <button id="bFlush" type="button" title="把队列里的记录全部发给本机 sink（断线恢复后也用它）">立即发送</button>
+  <button id="bExport" type="button">导出 JSON</button>
+</div>
+
+<!-- 我的 / 广场共用这一条工具栏（「看谁」只在广场出现：我的页视线恒在自己身上）；历史四列的补/改/删都在页面里的日线网格（impsNode） -->
+<div id="barTrend" class="bar hide">
+  <select id="whoPick" class="hide" title="选谁就在下面看谁、编辑谁（默认不选 = 只看排名）"><option value="">（看谁）</option></select>
+  <button id="bSample" type="button" title="在奖励页=读一次 90 天曝光数并落自己的日点；在任何人的主页=把这一屏的关注/粉丝落在页主名下那一行（只有自己的号还会打分钟点）">抓一个点</button>
+  <button id="bRestore" type="button" title="把 xprobe.db 里「每人每天一行」的日点灌回浏览器存储（日线图和日点表读的是浏览器运行态；backfill_days.py 直接写库的那些日子靠这个才看得见）">从本机库回填</button>
+  <button id="bDbRefresh" type="button" class="hide" title="重新读本机库 xprobe.db 的两张榜（进广场会自动读；宿主/sink 刚起来时点它）">重读库</button>
+</div>
+
+<!-- 诊断：查表 + 排障两键 -->
+<div id="barDebug" class="bar hide">
+  <input id="q" type="text" placeholder="查本地表：handle / 显示名 / 推文 ID / 正文关键词">
+  <button id="bQuery" type="button">查表</button>
+  <button id="bPing" type="button" title="测一次本机 sink 是否活着（首页通道灯红的先来这儿）">测活</button>
+  <button id="bStats" type="button">刷新计数</button>
+</div>
+
+<!-- 设置（v0.9.8 起重排）：一行只有三样东西 —— 名字、一行短提示、控件。
+     「这是什么/为什么」的全文收进每行自动生成的小 ❓（点开 setModal），不再常驻。
+     原因很实在：这一页原先常驻 2717 字说明，最长的一格 1585 字（徽标那颗闸的版本编年史），
+     设置页读起来像变更日志，控件反而找不着。小 ❓ 由 sidepanel.js 按 .secFold 生成，
+     html 里不手写 —— 这样「有全文就一定有入口」是代码保证的，不是靠人记得住。
+     另两件事同时改了：① 「运行模式」这颗钮不再顺手改状态（原先点一下展开内联登录框、再点一下直接退出登录），
+     现在它只打开模式弹窗，登录/切模式/退出都在弹窗里走完；② 动作结果写进「最近动作」那一行（静态 DOM），
+     不再 prepend 进 #report —— 那里每 900ms 被 render() 清空，「验证码已发到 xxx」其实只活了不到一秒。 -->
+<div id="setBox" class="hide">
+  <div class="sec">
+    <div class="secT">我的账号</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">钉死自己的 handle</div><div class="secHint">曝光数记在谁名下全靠这一格；留空＝回到自动识别</div><div class="secFold">曝光数只在奖励页读得到、那页 URL 里没有 handle ⇒ 它记在谁名下全靠这一格。留空 = 回到自动识别（从侧栏「个人资料」那颗导航猜）。改完只影响「以后写谁」，旧数据仍留在原 handle 名下</div></div>
+      <div class="inline"><input id="ownSet" type="text" maxlength="16" placeholder="@handle"><button id="bOwnSet" type="button">应用</button></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">数据存哪儿（默认只存本机）</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">运行模式</div><div class="secHint" id="cloudHint">纯本地：数据只进本机 xprobe.db；要上送就点这颗钮，弹窗里「登录」那一格填邮箱</div><div class="secFold">纯本地 = 所有数据只进本机 xprobe.db，一条都不出机器。云端 = 登录后，「我的」每日指标与关注台账上送 api2.mingzhang.cc，标杆账号/帖子按台账流水推到同一个地址（你自己的 boot4 Java 库，落「私有账层 + 实体层」，不动后台人工策展的那两张表）。出本机的域名只有这一条，验证码、登录、每日指标上送、推标杆四件事都走它。切回纯本地 = 只停上送，本地一个字节没动过。
+「切到云端」这颗钮只是打开弹窗：里面把两种模式各传什么说一遍，登录成功那一刻才真的切过去（没有登录态的「云端模式」等于开着一扇没接通的门）。已经登录过时，「切回纯本地」只停上送、保留登录态（下次切回云端不用重新收验证码）；要抹掉身份得在弹窗里按「退出登录」，那一步有二次确认。身份只存在本扩展自己的存储里，面板不回显 token。</div></div>
+      <button id="bCloud" type="button">切到云端</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">云端接口</div><div class="secHint" id="envHint">现在打的是：线上（读 ❓ 看两档各是什么）</div><div class="secFold">验证码、登录、每日指标上送、推标杆四件事永远只打**一个**地址，这一行选的就是那一个。线上 = https://api2.mingzhang.cc（部署好的那台 boot4）；本机 dev = http://127.0.0.1:28081（你自己正在跑的 boot4，端口抄它自己的 application-dev.yml，不是猜的）。两档地址写死在扩展代码里，这里只能二选一、填不进第三个地址——「设置里给个输入框随便填 URL」等于把「出本机只走回环与自家域名」那条红线当场作废，所以不做。
+换档不改本机任何一个字节，也不动「运行模式」那颗闸：纯本地在哪儿都不发。
+两档的登录态各存各的：线上换来的 JWT 不会跟着切档发到 localhost（对面是另一个进程，认不出你，还可能把你的数据写进不该写的库），dev 那档要在弹窗里重新登录一遍（本机 boot4 起好了才收得到验证码）。
+推标杆的水位也按档各存一本：切到 dev 是从头重放，不继承线上推到第几行——否则「换个档」就等于把 dev 从没收到过的行当成已同步，那批行永远推不出去（宁可重推，不可漏推；对面按 用户+设备+台账行号 去重，重推不落第二行）。
+本机 dev 这一档还要 boot4 放行跨域：Chrome 发出去的请求带的 Origin 是 chrome-extension://<扩展ID>（下面那行可复制），CorsConfig 的白名单里没有它 ⇒ Spring 的 CorsFilter 在任何 Controller 之前直接回 HTTP 403 纯文本「Invalid CORS request」，面板会照实说「被服务端跨域挡了」——那不是登录问题，重收验证码没用。</div></div>
+      <button id="bCloudEnv" type="button">接口：线上</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">上送状态</div><div class="secDesc" id="cloudStat">还没同步过（写进新数据 20 秒后自动传一次）</div><div class="secFold">这一行只管「每日指标 + 关注台账」往 api2.mingzhang.cc 那一趟（标杆走下面单独一趟，同一个域名另一个路径）。开着一有新数据 20 秒后自动传一次；「立即上送」是手动补一趟；v0.10.3 起登录成功那一下也当场各推一趟，两条腿各自的结果写在「最近动作」那一行。没登录 / 登录失效 / 网络断了 / 服务端不认这把 token 都写在这里，不糊成一句「同步失败」，也不把服务端的拒绝转述成「请登录」。那一句还会点名是哪一台（线上那个域名，还是本机 dev 那个端口）不认这把 token，并直说重新登录、重收验证码都换不来它点头——那一改在对面那台服务手里，要去那台机器上重启（本机 dev 看那个进程有没有在改动之后重启过，磁盘上的字节码换了不算；线上那台还得单独部署一次）；只有确认它跑的是新版之后，这把 token 过期或账号被禁用才轮得到你查。v0.10.5 起那一句不再替你断言对面跑的是哪一版（插件读不到对面的构建版本，写死了就会在重启之后变成假话），只给按顺序排的两问。存的是最近一次的账（chrome.storage 的 cloudStat），不是承诺队列——真要发出去的批次在 SW 那边有双通道，一条不丢。</div></div>
+      <button id="bCloudSync" type="button">立即上送</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">重试间隔</div><div class="secHint" id="retryHint">同步没成功时每 5 分钟自动再试一次（可改 1~60，改完当场生效）</div><div class="secFold">三本账（每日指标/关注台账、标杆台账、抓取档案）共用这一颗钟：上一趟没推成的，到点自动再推；推成了它也不空转（没有新行就不发请求）。默认 5 分钟，可改 1~60；纯本地模式下这颗钟照样会响，但一条上云请求都不发。设置存在 chrome.storage（ysy.xprobe.retryMin），改完立刻重建闹钟，不用重启浏览器。手动补一趟仍用各段的「立即…」钮。</div></div>
+      <div class="inline"><input id="retryMin" type="number" min="1" max="60" step="1" placeholder="5"><button id="bRetrySet" type="button">应用</button></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">标杆同步（自家 Java 库，走上面那个登录态）</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">推什么</div><div class="secHint">推台账里「水位之后」的事件行——进榜、改分类、移出各一行</div><div class="secFold">推的是本机那本 append-only 标杆台账里「水位之后」的事件行：进榜、改分类、移出各一行（移出=state 0 的墓碑，服务端留着才能把「撤了标杆」这件事传过去）。游标是台账自增 id，不是时间戳——换机器、改系统时钟都不会把中间那批吞掉。v0.9.6 那把同步密钥已退场：密钥只答得出「有钥匙」，答不出「谁标的」</div></div>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">推送状态</div><div class="secDesc" id="xsStat">没登录：上面「运行模式」切到云端并登录，才会推标杆</div><div class="secHint" id="xsWm">水位：账号 0 / 帖子 0</div><div class="secFold">「水位」是两本账各自的台账行号（账号一条、帖子一条，各走各的）。只推行号比它大的，且**只有服务端回了 ackAc/ackPo 才抬**——抬早了断网就永远丢一批。一批顶 500 行，剩下的下次接着推；对面按「用户+设备+行号」的唯一键去重，重推不会落第二行。纯本地模式点它 = 一个字节都不发（连本机库都不问）。</div></div>
+      <button id="bXsRun" type="button">立即推标杆</button>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">抓取档案（登录后自动推）</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">推什么</div><div class="secHint">账号与帖子，每人每帖只推最新快照</div><div class="secFold">推的是这台机器打开页面时抓到的账号与帖子：本机 store_users / store_posts 里每人、每帖最新一次快照（同一个人的旧快照不重推）。落到云端共享实体层 x_probe_account / x_probe_post，按 handle / 推文 id 去重，数值只许被「更晚看到的」那一份覆盖。不碰后台人工策展的 x_benchmark_account / x_benchmark_post。登录成功当场推一趟（全量批数）；之后每抓到一个新页面、那批落库的**同一刻**就自动推一趟（v0.10.7 起不再等 20 秒）；另有 30 分钟闹钟兜底。切回纯本地 = 一个字节都不发。</div></div>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">同步进度</div><div class="secDesc" id="libCount">点开核对进度</div><div class="secFold">点开是一张对账表：账号、帖子各自「本地有多少 / 已推多少 / 还差多少」，外加云端实体层的全库行数（那一列是全库计数，不是「你的」）。「已推」的口径是本机水位（服务端回了 ack 才抬的那一格）——本期不为同步另立一张记录表：水位本身就是账本，多一张表就多一处会跟水位对不上的数。x_probe_account / x_probe_post 是共享实体层，没有「这条属于谁」的列，算不出个人的条数。评论那一行写「未采集」是因为本机根本没抓评论正文（只记了每条帖的回复数），不是丢了。</div></div>
+      <button id="bLibStats" type="button">同步进度</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">同步状态</div><div class="secDesc" id="libStat">没登录：切到云端并登录后自动推，本机档案照常记</div><div class="secHint" id="libWm">水位：账号 0 / 帖子 0</div><div class="secFold">「水位」是 store_users / store_posts 各自的表行号，只推行号比它大的，且**只有服务端回了 ackAu / ackPo 才抬**——抬早了断网就会永远丢一批。一批顶 500 行，存量多的时候后台会接着推（面板每次回读看得到进度）。换档（线上 / 本机 dev）不继承另一档的水位：宁可整批重推，不可漏推；对面按 handle / 推文 id 去重，重推不落第二行。</div></div>
+      <button id="bLibRun" type="button">立即推档案</button>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">开关</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">诊断模式</div><div class="secHint">打开后顶部多「诊断」视图（排障用，平时不用开）</div><div class="secFold">打开后顶部多「诊断」视图；切进去会落一份 kind=debug 进本机日志</div></div>
+      <button id="bDebug" type="button">诊断模式: 关</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">调试转储</div><div class="secHint">每次采集顺手落一份整页结构树到本机 dump\ 目录</div><div class="secFold">每次采集顺手发一份整页结构树到本机 dump\ 目录</div></div>
+      <button id="bDump" type="button">调试转储: 关</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">全文 HTML</div><div class="secHint">整页 outerHTML，比结构树大几十倍，一般不用开</div><div class="secFold">整页 outerHTML，dump 大几十倍，一般不用开</div></div>
+      <button id="bHtml" type="button">全文HTML: 关</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">页面内拉黑徽标</div><div class="secHint">关掉＝当场摘干净、页面零痕迹；主页/页头那两颗星标同归这颗闸</div><div class="secFold">v0.8.16 起默认显示（这颗闸 v0.8.9 定的是「默认不显示」，你一直开着在用，2026-10-27 你点头改默认开）；拨回关就当场摘干净、连我们临时改的 position 一起还回去，页面零痕迹。开法改了五次：v0.8.10 把它从「挤在名字行里的一块」改成绝对定位（那一行的宽和高不再被我们改，评论区「鼠标一放上去就移动走」的元凶就是挤布局）；v0.8.11 改的是「放哪儿」——真机 X 的名字行抱紧自己的文字，时间右边那块空白住在它上面一两层的行里，只量名字行就会整页判「放不下」、一颗都不出；于是它沿参照物往上爬，把这条带上「不是我们这一支」的兄弟盒子全记成已占用（那排 Grok/更多 钮、列表页的关注钮都是），在剩下的缝里放：先贴着时间右缘放整颗，那条缝不够就放右边下一条缝，整颗哪儿都放不下才退成小红点，连点都放不下就不出。v0.8.12 改的是「会不会跑」——真机同一行隔一分钟落点从 264 变成 115：页面增量加载时名字行右边那些东西陆续挂上又撤下（第三方的「互关」胶囊、Grok/更多、后到的关注钮），每趟从零重算就跟着搬。现在两条硬规矩：已经挂好、且当前矩形仍然完整躺在某条缝里的徽标，这一趟一个字都不写；新落点一律贴缝的左缘（紧贴挡住它的那块字右边 4px），不再贴容器右墙——右墙随列宽与滚动条动，贴它就是「加载一点、跑一点」。v0.8.16 改的是「列表页一颗都没有」：真机粉丝/关注列表整条名字行住在 X 自己那颗「点它进主页」的大按钮里，老规矩「祖先链里有按钮就放弃」把每一行都判死了；现在这一层不能挂就往上爬出那颗按钮，挂到行容器（UserCell）上——徽标不是那颗按钮的孩子，点它不会导航。落点按你说的贴「正在关注/回关」的左缘（这条缝的右墙就是那颗钮，贴它不叫贴右墙），坐标写成 CSS right，窗口一宽一窄它自己跟着那颗钮走，不用重摆、也不产生「挪」。面板「性能账」那行记 出/退点/放不下/在钮上/挪 各几颗：「挪」一直在涨就是还在跑，把这一页的 URL 和这个数一起报上来；「在钮上」现在只在「爬出去也没有挂得住的层」时才涨。拨开这一枚当场就扫一遍，不用等下一拍。节点属性页面自己的脚本仍读得到，日常拉黑也可以只在页面「本页用户」名单行尾按，账本完全一样。v0.8.13 那颗徽标右边多一枚小标签：底色=档位、字=百分比。v0.8.14 把它换成「正在关注 ÷ 关注者」（你说 418/771 那个位置，之前算反了），档位照旧：95% 以上绿、85~95% 黄、85% 以下红（要挪阈值改 core 的 RATIO_YELLOW 一行即可）。这两个数不在评论区那一行里，只活在悬停名片与主页头部（真机 14 份转储实锤：整页只有一份带粉丝数的对象，且那是你自己的账号），所以只对「这台机器悬停过 TA 的头像、或进过 TA 的主页」的人出牌，没数就一个都不编。名单行尾新增两样：没数的人是一枚灰「—」（悬停它上面会告诉你怎么补），头部多一颗「待补(N)」筛子，照着把头像各悬停一次就永久入库；数每变一次就往台账留一个采样点，第二次起看的就是数值随时间的变化。数超过 30 天标签转虚线灰边（面板「性能账」新增 旧 K）。名单行尾那枚标签不受总闸限制（那是探针自己的面板，不碰页面）。面板「性能账」新增 标签/缺数/旧 三个数。v0.9.1 起这道闸管的不再只有拉黑那一颗：个人主页昵称右边那颗「☆/★」（加入/移除标杆）也长在 X 的 DOM 里 ⇒ 跟着同一道闸、同一趟扫描、同一个限流，拨回「关」就与徽标一起摘干净、连我们补的那一笔 position 一起还回去；「性能账」那行再多一格 主页星，一颗都没出时把原因写进括号（闸关着 / 没找到那一行 / 挂不住 / 放不下）——不说清就等于让人以为坏了</div></div>
+      <button id="bBadge" type="button">页面内徽标: 开</button>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">本机文件与清理</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">占用</div><div class="secDesc" id="fsDesc">还没测：点右边「重测」</div><div class="secFold">数据目录里 logs / dump / xprobe.db 各多大、按保留天数能清多少。数字全是本机 xprobe_fs.py 量回来的，面板一个字节都不自己算——「按保留天数能清多少」这个口径只有本机知道文件名。没测过时这行自己会说该点哪枚钮。</div></div>
+      <div class="inline"><button id="bFsRefresh" type="button">重测</button></div>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">保留天数</div><div class="secHint">超过这些天的日志与转储才算垃圾；库里的数据是档案，不自动删</div><div class="secFold">超过这些天的日志与转储才算垃圾（默认 7 天，可改 1~365）。库里的数据不在自动清理范围 —— 那是档案</div></div>
+      <div class="inline"><input id="fsKeep" type="number" min="1" max="365" step="1" placeholder="7"><button id="bFsKeep" type="button">应用</button><button id="bFsAuto" type="button">自动清理: 开</button></div>
+    </div>
+    <div class="secRow danger">
+      <div class="secTxt"><div class="secLab">清日志</div><div class="secHint">第一下只量（DRY），60 秒内再点一次才真删</div><div class="secFold">logs\*.ndjson 与 xprobe-*.log 里过保留天数的；第一下只量（DRY），60 秒内再点一次才真删</div></div>
+      <div class="inline"><button id="bCleanLogs" type="button" class="btnDanger">清日志</button></div>
+    </div>
+    <div class="secRow danger">
+      <div class="secTxt"><div class="secLab">清转储</div><div class="secHint">第一下只量（DRY），60 秒内再点一次才真删</div><div class="secFold">dump\ 与 dump-test\ 里过保留天数的整页目录；同样是「先量再删」两下</div></div>
+      <div class="inline"><button id="bCleanDump" type="button" class="btnDanger">清转储</button></div>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">整理库</div><div class="secHint">VACUUM 只压实空闲页，一行数据都不删；大库要跑几十秒</div><div class="secFold">VACUUM：把 xprobe.db 的空闲页压实，一行数据都不删；几百 MB 的库要跑几秒到几十秒</div></div>
+      <div class="inline"><button id="bVacuum" type="button">整理库</button></div>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">清理结果</div><div class="secDesc" id="fsNote">(没动作)</div><div class="secFold">这一行只写刚才那一枪的量/删除结果（DRY 那一下也算，会写「能清多少」）。按天删库里的行不在这里，那需要调用方明确传 yes=purge-db，至今没做。</div></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">关注节奏</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">关注加时上限</div><div class="secHint">60 秒冷却之外再随机加 0~上限秒；0＝固定 60 秒</div><div class="secFold">60 秒冷却之外再随机加 0~上限秒，每次单独抽签；0 = 固定 60 秒。抽签只影响「下一个多久能做」，不拦你现在的点击（红线：守卫只警告）。</div></div>
+      <div class="inline"><input id="rndMax" type="number" min="0" max="300" step="1" placeholder="20"><button id="bRndSet" type="button">应用</button></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">今日目标（首页进度条）</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">基线 / 目标</div><div class="secHint">基线＝今天开屏「正在关注」（留空＝自动取首个读数）；目标＝今天要发的关注数</div><div class="secFold">基线 = 今天开屏「正在关注」（如 2960，留空 = 自动取今天首个读数）；目标 = 今天要发的关注数（默认 399）</div></div>
+      <div class="inline"><input id="goalBase" type="number" min="0" step="1" placeholder="自动"><input id="goalTarget" type="number" min="1" step="1" placeholder="399"><button id="bGoalSet" type="button">应用</button></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">维护（低频，排障才用）</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">深挖并上报</div><div class="secHint">排 metrics 争议时把整页 probe 记录重发一次</div><div class="secFold">排 metrics 争议时把整页 probe 记录重新发一次</div></div>
+      <button id="bProbe" type="button">深挖并上报</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">抓整页原文</div><div class="secHint">手动抓一份结构树 + 可见原文（越过冷却，计入预算）</div><div class="secFold">手动抓一份结构树 + 可见原文（越过冷却，计入预算）</div></div>
+      <button id="bDumpOnce" type="button">抓整页原文</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">重算两张表</div><div class="secHint">按最新判据重算 users/posts，只读本机已有快照</div><div class="secFold">按最新判据重算 users/posts，只读本机已有快照</div></div>
+      <button id="bRebuild" type="button">重算两张表</button>
+    </div>
+    <div class="secRow danger">
+      <div class="secTxt"><div class="secLab">清空</div><div class="secHint">第一下只提醒（60 秒内再点一次才真清）；只清浏览器侧运行态与两张表，本机 xprobe.db 档案库不动</div><div class="secFold">v0.10.1 起这一颗也走「两下才动手」（和清日志/清转储/整理库同一颗闸 ARM_MS=60 秒）：第一下只把「会清掉什么」写进「最近动作」那一行、钮自己改口「再点一次=清空」，60 秒内第二下才真的发命令；过了 60 秒钮自己变回「清空」，等于自动取消。清的是浏览器侧的运行态与 users/posts 两张表；本机 xprobe.db 是档案库，一个字节都不碰（要删库里的行请走本机那侧的脚本，插件不做）</div></div>
+      <button id="bClear" type="button" class="btnDanger">清空</button>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">本机模型（选装 · 默认关）</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">本机模型</div><div class="secHint" id="modelHint">还没读到（这页刚打开）</div><div class="secFold">这一颗闸管的是「AI 回帖」那条腿走不走。三层授权，少一层就一个字节都不发：① 模型请求只从原生宿主那条路走（下面那节那条命令装一次）—— 扩展自己没有对本机任何模型端口的 host_permissions，manifest 一个字没动（红线 RL-3：申请了不用也是扩权，所以宁可走宿主也不加这条权限）；② 这一颗闸默认关，关着的时候连本机的 11434 都不问一句，页面那颗「AI 回帖」钮也不会出现；③ 打开之后宿主自己再判一次地址，只认 http://127.0.0.1:端口 或 http://localhost:端口，https、公网 IP、带路径的一律当场拒，而且它不跟任何 HTTP 跳转 —— 本机服务回一个 302 想把这趟支到外网，那一跳跟不了（红线 RL-2：出本机的只有回环与自家域名）。开着的时候它只干一件事：把当前这一页那条帖子的原文发给你自己机器上的模型，回一段草稿让你复制到输入框里。它不替你发回帖、不点页面里任何按钮（红线 RL-1：只观测、只替你准备，动手的是你）。</div></div>
+      <button id="bModelOn" type="button">本机模型: 关</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">连的是哪台</div><div class="secDesc" id="modelConf">还没读到（这页刚打开）</div><div class="secFold">端点、地址、模型名、超时、系统提示、API Key 都存在本机 chrome.storage（键 ysy.xprobe.model），读它的只有 SW 与原生宿主，页面脚本读不到。Key 那一格只在「SW → 宿主」这一跳里带着走，面板这边从不回显明文（每 900 毫秒重画一次的 DOM 里摊着本机机密不划算），要点开弹窗也只看到「已设 / 没设」。端口各家不同：Ollama 常见 11434、LM Studio 1234、vLLM 8000、本地 OpenAI 兼容网关各有自己的 —— 这一格只认 http 且只认回环，填进别的地址保存不了，这是设计不是没做完：真要给别的机器上的模型开条路，那就得动 manifest 与那条红线，本版不做。</div></div>
+      <button id="bModelEdit" type="button">改配置</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">最近一趟</div><div class="secDesc" id="modelStat">还没试过这台模型</div><div class="secFold">「测活」问的是本机那个服务「你这儿装了哪些模型」，它不写草稿、不碰页面，也不占今天的采集预算；这一行的账记的是上一次真跑的那一趟（几秒回来的、成了还是断在哪一步），存在 chrome.storage 的 ysy.xprobe.modelStat，重启浏览器还在。宿主没装、或装的是还不认这条通道的旧版，这里会明说什么原因并给出那条重打包命令，而不是留一句「没反应」让人猜（红线 RL-11：不许静默失败）。</div></div>
+      <button id="bModelTest" type="button">测活</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">页面那一腿</div><div class="secHint">第七颗「回帖」＝详情页一稿草稿</div><div class="secFold">右缘那列钮排的最后多一颗「回帖」（在「标帖」下面、守卫灯上面），它**只在这颗闸开着时露面**——关着时它 display:none、卡片整棵不存在，连一条请求都不发，留一颗点下去注定没反应的入口不如不放。点开是一张卡片：顶上写清这次要发的是哪一条（@作者 · 帖子 id · 正文多少字），中间是那帖的原文，下面是草稿框（可以在这儿直接改字，改完的算最新草稿），两枚钮是「写一稿」和「复制草稿」。目标只有帖子详情页那一条：首页/列表一屏好几条，选哪条都是猜，宁可不开这一腿也不猜。换页时草稿自动清空——留着旧帖那段字、目标行却指向新帖，最容易让人顺手发出去。「复制」只写剪贴板；这一腿从不点页面里任何钮、不往回复框里打字（红线 RL-1：只观测、只替你准备）。这一世问了几次、断了几次也在这张卡的最后一行念出来（SW 那份实时账，重开浏览器归零）。</div></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="secT">本机库直连（装一次就好）</div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">扩展 ID 与安装命令</div><div class="secHint" id="extIdLine">读不到（面板不是扩展页面？）</div><div class="secFold">装原生宿主要用它：把这行命令在本机的仓库目录里跑一次（写的是 HKCU，不需要管理员；不带 --no-build，它会顺手重打 xprobe-host.exe）。跑完记得扩展 ⟳ + 刷新 x.com 标签页，面板页脚「宿主」那截会从 ? 变成 native-N。
+为什么非要打包成 exe：Chrome 用 CreateProcess 直接拉起清单里的 path，.bat 不是可执行映像，那条路走不通。宿主不在时的回退才是 start-sink.bat。
+（弹窗下面那颗「复制命令」复用面板本来就有的那条复制路径：剪贴板写不动就退回「选中 + execCommand」，和「我的」页那两颗复制钮同一套。红线 RL-3 拦的是为这一格往 manifest 多要一条 clipboardWrite 权限——manifest 一个字没动。真复制不了也别卡住：这段文字选中就是 Ctrl+C。）</div></div>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">最近动作</div><div class="secDesc" id="setNote">（这页刚打开，还没点过什么）</div><div class="secFold">这一行写「你刚才那一下的结果」——发验证码、登录、切模式、推标杆、应用输入框、重算、回填都写在这里。它不往上面的报告区写，是因为报告区每 900 毫秒重画一次，原先那句「验证码已发到 xxx」其实活不到一秒就没了。</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置页的统一弹窗（v0.9.8）：小 ❓ 打开「这条的完整说明」，「运行模式」打开模式与登录。
+     挂在 body 上而不是 #report 里 —— #report 每 900ms 被 render() 清空，弹窗要是建在那儿，
+     用户正在打验证码就被下一轮轮询抹掉了。 -->
+<div id="setModal" class="modalWrap hide" role="dialog" aria-modal="true" aria-labelledby="setModalTitle">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle" id="setModalTitle"></div><button id="setModalX" type="button" class="modalX" title="关闭（也可以按 Esc 或点旁边）">×</button></div>
+    <div class="modalBody" id="setModalBody"></div>
+  </div>
+</div>
+
+<div id="err"></div>
+<main id="report"></main>
+<footer id="foot"></footer>
+
+<script src="view.js"></script>
+<script src="sidepanel.js"></script>
+</body>
+</html>

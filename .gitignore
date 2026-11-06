@@ -1,0 +1,28 @@
+# 运行产物
+__pycache__/
+*.pyc
+native/dist/
+native/build/
+*.spec
+build/
+
+# 本机生成、因人而异（安装器会重新写一份）
+native/com.yunxiao.xprobe.json
+
+# 一次性脚本与抓取临时件（不属于产品）
+.tmp_probe/
+.tmp_inspect.py
+.tmp_scan.py
+.fsprobe.js
+.trae-html-share-packages/
+.workbuddy/
+
+# 内部笔记与设计稿（个人工作区，不随产品开源）
+skills/
+design/
+
+# 一次性输出
+out*.txt
+
+# 个人待办（含私人信息，不上库）
+代办.md
