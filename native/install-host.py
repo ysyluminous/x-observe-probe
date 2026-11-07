@@ -29,13 +29,29 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 REG_KEY = r"Software\Google\Chrome\NativeMessagingHosts\%s" % HOST_NAME
 EXT_RE = re.compile(r"^[a-p]{32}$")
+def _find_legacy_dir():
+    """Locate an older data dir (temp/xprobe) under any ancestor of this file or exe."""
+    try:
+        here = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else Path(__file__).resolve()
+    except Exception:
+        return None
+    for p in here.parents:
+        cand = p / "temp" / "xprobe"
+        try:
+            if cand.is_dir():
+                return cand
+        except Exception:
+            pass
+    return None
+
+
 def _default_dir() -> Path:
     # 与 log-sink.py 同一套兜底：XPROBE_DIR → 作者机器的历史目录（存在就沿用）→ ~/xprobe。别写死盘符。
     env = os.environ.get("XPROBE_DIR")
     if env:
         return Path(env)
-    legacy = Path(r"D:\code\yunxiao\temp\xprobe")
-    return legacy if legacy.parent.exists() else Path.home() / "xprobe"
+    legacy = _find_legacy_dir()
+    return legacy if legacy else Path.home() / "xprobe"
 
 
 DEFAULT_DIR = _default_dir()

@@ -40,11 +40,27 @@ HOST_VER = "native-7"   # v0.11.4：多一条本机模型通道（llm，只许�
                         # （native-6 = 打包进来的 xprobe_db.py 到 db-10：block_marks / block_stat 两条拉黑上云查询）
 HOST_NAME = "com.yunxiao.xprobe"
 MAX_RESP = 900 * 1024          # Chrome → 宿主 64MB，宿主 → Chrome 只有 1MB；留出余量后明确报错，别让 Chrome 截断
+def _find_legacy_dir():
+    """Locate an older data dir (temp/xprobe) under any ancestor of this file or exe."""
+    try:
+        here = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else Path(__file__).resolve()
+    except Exception:
+        return None
+    for p in here.parents:
+        cand = p / "temp" / "xprobe"
+        try:
+            if cand.is_dir():
+                return cand
+        except Exception:
+            pass
+    return None
+
+
 def _default_dir() -> Path:
     # 兜底默认（env/json 都没配到才轮到它）：作者机器的历史目录存在就沿用，否则回落用户目录 ~/xprobe。
     # 别写死盘符——别人机器上没有 D: 时宿主连库都建不出来。
-    legacy = Path(r"D:\code\yunxiao\temp\xprobe")
-    return legacy if legacy.parent.exists() else Path.home() / "xprobe"
+    legacy = _find_legacy_dir()
+    return legacy if legacy else Path.home() / "xprobe"
 
 
 DEFAULT_DIR = _default_dir()

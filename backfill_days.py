@@ -49,7 +49,7 @@ def recs_for(own: str) -> list:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default=r"D:\code\yunxiao\temp\xprobe\xprobe.db")
+    ap.add_argument("--db", default=xdb._cli_default("xprobe.db"))
     ap.add_argument("--own", default="demo_own")
     ap.add_argument("--apply", action="store_true", help="真的写库（默认只 DRY 打印）")
     ap.add_argument("--undo", action="store_true", help="按同一批 key 删掉（回滚）")

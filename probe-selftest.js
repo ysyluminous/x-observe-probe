@@ -8742,7 +8742,7 @@ const layersDone = (async function () {
 const liveHeader = () => console.log('\n[10] 端到端打真 sink：自检流量分流 + 真机通道正向对照（需先跑 start-sink.bat）');
 if (process.argv.indexOf('--live') >= 0) {
   // 数据目录与 log-sink.py 同一套兜底：XPROBE_DIR → 作者历史目录存在则沿用 → ~/xprobe
-  const legacy = 'D:/code/yunxiao/temp';
+  const legacy = path.resolve(__dirname, '..', 'temp').split(path.sep).join('/');
   const dir = process.env.XPROBE_DIR
     || (fs.existsSync(legacy) ? legacy + '/xprobe'
       : (process.env.USERPROFILE || process.env.HOME) + '/xprobe');

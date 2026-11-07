@@ -55,14 +55,34 @@ except Exception as _xfs_e:      # 同上：清理模块坏了，接收端照常
     xfs = None
     sys.stderr.write("占用/清理模块导入失败: %s\n" % _xfs_e)
 
+def _find_legacy_dir():
+    """Locate an older data dir (temp/xprobe) under any ancestor of this file or exe.
+
+    Kept for people migrating from an older layout; on a fresh clone nothing is
+    found and the caller falls back to ~/xprobe.
+    """
+    try:
+        here = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else Path(__file__).resolve()
+    except Exception:
+        return None
+    for p in here.parents:
+        cand = p / "temp" / "xprobe"
+        try:
+            if cand.is_dir():
+                return cand
+        except Exception:
+            pass
+    return None
+
+
 def _default_dir() -> Path:
     # 数据目录：XPROBE_DIR 环境变量 → 作者机器的历史目录（存在就沿用，老数据不断档）→ 用户目录 ~/xprobe。
     # 不能写死盘符：别人 clone 到的机器上没有 D: 时，接收端会在建目录那一步死掉。
     env = os.environ.get("XPROBE_DIR")
     if env:
         return Path(env)
-    legacy = Path(r"D:\code\yunxiao\temp\xprobe")
-    return legacy if legacy.parent.exists() else Path.home() / "xprobe"
+    legacy = _find_legacy_dir()
+    return legacy if legacy else Path.home() / "xprobe"
 
 
 DEFAULT_DIR = _default_dir()

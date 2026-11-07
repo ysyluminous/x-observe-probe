@@ -1203,10 +1203,26 @@ def backfill(logs_dir, log_fn=None, summarize=None) -> dict:
     return out
 
 
+def _find_legacy_dir():
+    """Locate an older data dir (temp/xprobe) under any ancestor of this file or exe."""
+    try:
+        here = Path(sys.executable).resolve() if getattr(sys, "frozen", False) else Path(__file__).resolve()
+    except Exception:
+        return None
+    for p in here.parents:
+        cand = p / "temp" / "xprobe"
+        try:
+            if cand.is_dir():
+                return cand
+        except Exception:
+            pass
+    return None
+
+
 def _cli_default(sub: str) -> str:
     # 与 log-sink 同一套兜底（XPROBE_DIR → 作者历史目录存在则沿用 → ~/xprobe），别写死盘符
-    legacy = Path(r"D:\code\yunxiao\temp\xprobe")
-    base = Path(os.environ.get("XPROBE_DIR") or (legacy if legacy.parent.exists() else Path.home() / "xprobe"))
+    legacy = _find_legacy_dir()
+    base = Path(os.environ.get("XPROBE_DIR") or (legacy if legacy else Path.home() / "xprobe"))
     return str(base / sub)
 
 
