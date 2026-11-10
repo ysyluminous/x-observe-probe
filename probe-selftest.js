@@ -631,7 +631,7 @@ console.log('\n[5] 面板（数据通道 + 格式化层；页面里已经没有�
   const dt = dlines.map((m) => (m.k === 'row' ? m.label + ' ' + m.value : m.k === 'fold' ? m.title + ' ' + m.text : m.text)).join('\n');
   ok('Side Panel 经命令通道拿到 state', res.ok && res.state.last.tweets.length === 3, res.ok);
   eq('渲染不往页面加节点：本模块自己造的就是右下角一根玻璃柱（方案 A 钮排：柱容器 + 内嵌样式 + 探针点 + 分隔线 + 关/榜/回/杆/帖/稿/观 + 各自的 label span；v0.11.4 那第七颗「回帖」造出来就常驻，闸关着时只 display:none，摘了反而每翻一次闸要重建一次）',
-    [created.length, created.filter((e) => /^ysy-xprobe/.test(e.id || '')).length], [18, 8]);
+    [created.length, created.filter((e) => /^ysy-xprobe/.test(e.id || '')).length], [20, 9]);
   ok('首页有今日四列单卡（四列标签顺序固定；v0.6.11 起打开主页就自动落今天那行 ⇒ 关注/粉丝有数；v0.8.1 起帖子总数也自动采，只剩曝光还是话术）',
     !!hero && /^\d{4}-\d{2}-\d{2}$/.test(hero.day) &&
     hero.items.map((i) => i.label).join('/') === '曝光/关注/粉丝/帖子' &&
@@ -3449,7 +3449,7 @@ console.log('\n[11] 关注守卫：只读观察 / 基线不虚计 / 滚动窗口
   const gst = xp.stateForPanel();
   ok('到限信息进 state（腾出位置那句话由 view 层拼，见 [12]）', gst.guard.over24 === true && gst.guard.free24 > 0, [gst.guard.f24, gst.guard.free24]);
   eq('state 里带着 sink/guard/dump/counts/last/missing/notes/upsert/host/peer/own/series/storage/runsMeta（v0.6.8 加 debug/rndMax，v0.6.9 加 trim，v0.8.7 加 perf，v0.8.9 加 badge），面板不再读页面', Object.keys(gst).sort().join(','),
-    'badge,build,counts,debug,dump,guard,host,href,last,missing,notes,own,peer,perf,rndMax,runsMeta,series,sink,storage,tab,trim,upsert,ver');
+    'badge,build,counts,debug,dump,guard,host,hotbadge,href,last,missing,notes,own,peer,perf,rndMax,runsMeta,series,sink,storage,tab,trim,upsert,ver');
   // 队列账本与表顶状态必须真的在 state 里：面板那两行只是读它们，读不到就是「看不见」的老问题
   eq('state.sink.q 是队列账本（长度/落盘条数/丢弃数/断线毫秒/两个上限）',
     ['len,bytes,count,dropped,adopted,persisted,lastAt,err,down,max,byteCap,boot', typeof gst.sink.q.len === 'number' && !!gst.sink.q.boot],
@@ -3470,7 +3470,7 @@ console.log('\n[11] 关注守卫：只读观察 / 基线不虚计 / 滚动窗口
   const injected = sb.__created;
   eq('页面里我只造一根玻璃柱：柱容器 + 关/榜/回/杆/帖/稿/观七颗（v0.9.5 柱内多三个不带 id 的常驻件：内嵌样式/探针点/分隔线，两张窗口仍只在点开时存在；v0.11.4 第七颗「回帖」造出来就藏在柱里，本机模型那颗闸开着才 display:flex）',
     injected.filter((e) => e.id).map((e) => e.id), ['ysy-xprobe-ext-bar', 'ysy-xprobe-ext-fbtn', 'ysy-xprobe-ext-cbtn',
-      'ysy-xprobe-ext-rbtn', 'ysy-xprobe-ext-bbtn', 'ysy-xprobe-ext-bpbtn', 'ysy-xprobe-ext-aibtn', 'ysy-xprobe-ext-fab']);
+      'ysy-xprobe-ext-hotbtn', 'ysy-xprobe-ext-rbtn', 'ysy-xprobe-ext-bbtn', 'ysy-xprobe-ext-bpbtn', 'ysy-xprobe-ext-aibtn', 'ysy-xprobe-ext-fab']);
   ok('第七颗「稿」（AI 回帖）在闸关着时是藏着的（display:none，不是一个字都不发的那种「没做」）：默认关 = 页面上找不到它',
     !!IDS['ysy-xprobe-ext-aibtn'] && IDS['ysy-xprobe-ext-aibtn'].style.display === 'none'
       && IDS['ysy-xprobe-ext-aibtn'].textContent === '稿', IDS['ysy-xprobe-ext-aibtn'] && IDS['ysy-xprobe-ext-aibtn'].style.display);
@@ -6962,8 +6962,8 @@ const layersDone = (async function () {
     });
     const visible = (r) => r.hint.length + r.desc.length;
     const sum = (arr) => arr.reduce((a, x) => a + x, 0);
-    ok('setBox 解析得到（这一段的账不能对着空气算）：32 行（v0.10.0 多了「云端接口」、v0.10.6 多了「抓取档案」两行、v0.10.7 多了「同步进度」、v0.11.0 多了「重试间隔」、v0.11.4 多了「本机模型」那一节的四行）、每行都有 secLab',
-      rows25.length === 32 && rows25.every((r) => r.lab.length > 0), rows25.length);
+    ok('setBox 解析得到（这一段的账不能对着空气算）：33 行（v0.10.0 多了「云端接口」、v0.10.6 多了「抓取档案」两行、v0.10.7 多了「同步进度」、v0.11.0 多了「重试间隔」、v0.11.4 多了「本机模型」那一节的四行、v0.11.18 多了「热点徽标」一行）、每行都有 secLab',
+      rows25.length === 33 && rows25.every((r) => r.lab.length > 0), rows25.length);
     ok('常驻可见的说明压到 800 字以内（v0.9.7 实测 2717 字 ⇒ 一屏读不完、控件找不到；v0.11.0 多一行「重试间隔」抬到 760；v0.11.4 多一节「本机模型」四行抬到 800，每行仍有上限）',
       sum(rows25.map(visible)) <= 800, sum(rows25.map(visible)));
     ok('每一行常驻那一句都不超过 60 字（超了就是又写回了一整段）',
@@ -8736,6 +8736,133 @@ const layersDone = (async function () {
         bwin.listeners.message.length, 1);
     }
   }
+    // ================= art-020 本页热度榜（口径参考，未复制代码）：新增断言单独计数 =================
+    {
+      const passBase = pass;
+      console.log('\n[art-020] 本页热度榜（抓取口径 / 流速分档 / 推广去重 / 总闸 / 版本戳 / 不滚动）');
+      const HOT_N = '2026-11-10T12:00:00.000Z', HOT_NOW = Date.parse(HOT_N);
+      const isoH = (h) => new Date(HOT_NOW - h * 3600000).toISOString();
+      function tw(id, views, iso, name, text, opts) {
+        const o = opts || {}, kids = [];
+        if (views != null) kids.push(h('a', { href: '/user/status/' + id + '/analytics', 'aria-label': views + ' views' }, [T('v')]));
+        kids.push(h('time', { datetime: iso }, [T('t')]));
+        kids.push(h('button', { 'data-testid': 'like', 'aria-label': '123 likes' }, [T('♥')]));
+        kids.push(h('button', { 'data-testid': 'retweet', 'aria-label': '45 reposts' }, [T('↻')]));
+        kids.push(h('button', { 'data-testid': 'reply', 'aria-label': '12 replies' }, [T('↩')]));
+        kids.push(h('div', { role: 'group', 'aria-label': '12 replies、45 reposts、123 likes、20 bookmarks、' + views + ' views' }, [T('g')]));
+        kids.push(h('div', { 'data-testid': 'User-Name' }, [h('a', { href: '/user_' + id }, [T(name)])]));
+        kids.push(h('div', { 'data-testid': 'tweetText' }, [T(text)]));
+        kids.push(h('a', { href: '/user_' + id + '/status/' + id }, [T('link')]));
+        if (o.promoted) kids.push(h('div', { 'data-testid': 'placementTracking' }, [T('ad')]));
+        return h('article', { 'data-testid': 'tweet' }, kids);
+      }
+      // 六条：A(12000/1h) B(3000/3h) C(500/5h) D=推广 E=缺views A2=A 的重复（虚拟列表回收）
+      const hotRoot = h('div', {}, [
+        tw('111', '12,000', isoH(1), '甲', '第一条正文', {}),
+        tw('222', '3,000', isoH(3), '乙', '第二条正文', {}),
+        tw('333', '500', isoH(5), '丙', '第三条正文', {}),
+        tw('444', '9,999', isoH(1), '丁', '推广正文', { promoted: true }),
+        tw('555', null, isoH(2), '戊', '缺浏览量', {}),
+        tw('111', '12,000', isoH(1), '甲', '第一条正文 回滚重现', {}),
+      ]);
+      const hs = run(hotRoot, '/home', 'https://x.com/home');
+      const H = hs.__xprobe;
+
+      // 验收 3：数字归一化 + 格式 + 三档阈值（构造断言，入口是纯函数）
+      eq('hotFirstNum 去千分位/空格/NBSP/窄空格后取首数字',
+        [H.hotFirstNum('12,000 views'), H.hotFirstNum('1\u00a0200 次浏览'), H.hotFirstNum('3\u202f000 vues'), H.hotFirstNum('无数字')],
+        [12000, 1200, 3000, null]);
+      eq('hotFmt 三档：>=1e6 写 M、整 k 不带小数、千位保留一位、其余取整',
+        [H.hotFmt(1200000), H.hotFmt(12000), H.hotFmt(1000), H.hotFmt(500)],
+        ['1.2M', '12k', '1.0k', '500']);
+      eq('hotTier 三档：12000→viral红🔥 / 1000→trending橙🚀 / 其余→normal绿🌱',
+        [H.hotTier(12000).key, H.hotTier(12000).icon, H.hotTier(1000).key,
+         H.hotTier(1000).icon, H.hotTier(100).key, H.hotTier(100).icon],
+        ['viral', '🔥', 'trending', '🚀', 'normal', '🌱']);
+      eq('hotScore 按四段加权公式算并封顶 100',
+        [H.hotScore({ views: 10000, likes: 100, rt: 50, replies: 20, bm: 30 }, 10000),
+         H.hotScore({ views: 1, likes: 0, rt: 0, replies: 0, bm: 0 }, 1e9)], [47, 40]);
+
+      // 验收 3（续）+ 2：单条抓取口径与流速误差 <1%
+      const a = H.hotParseArticle(hotRoot.kids[0], HOT_NOW, null);
+      const b = H.hotParseArticle(hotRoot.kids[1], HOT_NOW, null);
+      const c = H.hotParseArticle(hotRoot.kids[2], HOT_NOW, null);
+      eq('views=12000/1h → 12k/h 红🔥；3000/3h → 1.0k/h 橙🚀；500/5h → 100/h 绿🌱',
+        [a.velLabel, a.tier, a.icon, b.velLabel, b.tier, b.icon, c.velLabel, c.tier, c.icon],
+        ['12k/h', 'viral', '🔥', '1.0k/h', 'trending', '🚀', '100/h', 'normal', '🌱']);
+      ok('第一名页面显示流速与 views/年龄(h) 误差 <1%（这里正好 0）',
+        Math.abs(a.velocity - a.views / a.hours) / (a.views / a.hours) < 0.01 && a.hours === 1,
+        [a.velocity, a.views / a.hours, a.hours]);
+      eq('抓取只认本条推文：评论/转发/回复/书签数都从本条按钮与 group 取',
+        [a.views, a.likes, a.rt, a.replies, a.bm], [12000, 123, 45, 12, 20]);
+
+      // 验收 4/5/2：推广不进榜、按 tid 去重、按流速降序取前 N
+      const board = H.hotBoard(HOT_NOW, { limit: 10 });
+      eq('榜单覆盖 6 条、推广剔 1、缺数记 1、去重后入榜 3',
+        [board.cov, board.promoted, board.miss, board.total], [6, 1, 1, 3]);
+      eq('按流速降序：12000/h > 1000/h > 100/h，重复的那条只出现一次',
+        board.rows.map((r) => r.tid + ':' + Math.round(r.velocity)), ['111:12000', '222:1000', '333:100']);
+      eq('home 页面范围判定 = home', board.scope, 'home');
+      eq('四类页面生效、保留路径不生效',
+        [H.hotScope('/'), H.hotScope('/i/lists/abc'), H.hotScope('/alice/lists/x'),
+         H.hotScope('/u/status/123'), H.hotScope('/zhangsan'), H.hotScope('/explore'), H.hotScope('/settings')],
+        ['home', 'list', 'list', 'status', 'profile', '', '']);
+
+      // 验收 4（嵌套引用推不串数）：内层引用推的 analytics 数字不许被外层抓走
+      const nested = h('article', { 'data-testid': 'tweet' }, [
+        h('a', { href: '/u/status/900/analytics', 'aria-label': '999999 views' }, [T('v')]),
+        h('a', { href: '/u/status/901' }, [T('l')]),
+        h('time', { datetime: isoH(1) }, [T('t')]),
+        h('div', { 'data-testid': 'tweetText' }, [T('外层')]),
+        h('article', { 'data-testid': 'tweet' }, [
+          h('a', { href: '/u/status/902/analytics', 'aria-label': '7 views' }, [T('v')]),
+        ]),
+      ]);
+      eq('嵌套引用推：closest 过滤后外层只认自己的 999999，不串内层的 7',
+        H.hotParseArticle(nested, HOT_NOW, null).views, 999999);
+
+      // 验收 6：徽标总闸默认关；开才挂、关当场清零，且不动 X 自己的节点
+      delete store[H.HOT_BADGE_KEY];
+      eq('流速徽标总闸默认关（与拉黑徽标那道闸分开）', H.hotBadgeGet(), false);
+      const xBefore = hotRoot.querySelectorAll('div[role="group"]').length;
+      H.setHotBadge(true);
+      const badgesOn = hotRoot.querySelectorAll('.' + H.HOT_BADGE_CLS).length;
+      ok('开闸后每条入榜推文都挂上流速徽标（class=' + H.HOT_BADGE_CLS + '；ID 111 在 DOM 里出现两次就挂两颗，与榜单去重无关）', badgesOn === 4, badgesOn);
+      H.setHotBadge(false);
+      eq('关闸当场摘净：徽标节点清零、X 自己的节点一个没少',
+        [hotRoot.querySelectorAll('.' + H.HOT_BADGE_CLS).length,
+         hotRoot.querySelectorAll('[data-xprobe="hotvel"]').length,
+         hotRoot.querySelectorAll('div[role="group"]').length], [0, 0, xBefore]);
+
+      // 验收 9：榜单卡片可开合、点条目只在列表内高亮、不滚动页面
+      hs.window.scrollY = 300;
+      H.hotToggle();
+      const list1 = IDS[H.HOTLIST_ID];
+      ok('点「热」展开榜单卡片（挂在右缘列的 fixed 浮层，不在 X 的 header 里）', !!list1 && list1.id === H.HOTLIST_ID);
+      const rows = list1.querySelectorAll('.ysy-hot-row');
+      eq('榜单列出 3 行、首行是 12000/h', [rows.length, rows[0].getAttribute('data-hot-id')], [3, '111']);
+      rows[0].fire('click');
+      eq('点条目只列表内高亮，window.scrollY 不变',
+        [rows[0].getAttribute('class'), !!rows[0].__scrolls, hs.window.scrollY],
+        ['ysy-hot-row ysy-hot-on', false, 300]);
+      H.hotToggle();
+      ok('再点一次整棵摘除（关闭不留节点）', !hs.document.getElementById(H.HOTLIST_ID));
+
+      // 验收 7：权限未新增（仍 6 项），没有 scripting/webRequest/cookies
+      const mfA = JSON.parse(rd('manifest.json'));
+      eq('manifest permissions 仍为原来 6 项、未加三条高危权限',
+        [mfA.permissions.length, /scripting|webRequest|cookies/.test(JSON.stringify(mfA.permissions))],
+        [6, false]);
+
+      // 验收 8：版本戳四处一致
+      const spA = rd('ui/sidepanel.js');
+      eq('版本戳四处一致：manifest.version == core VER、core BUILD == sidepanel PANEL_BUILD',
+        [mfA.version === SRC_VER, SRC_VER, /PANEL_BUILD = '([^']+)'/.exec(spA)[1] === SRC_BUILD, SRC_BUILD],
+        [true, '0.11.18', true, '2026-11-10-a']);
+
+      console.log('[art-020] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
+    }
+
 })();
 
 // [10] 的标题延后打印：扩展三层（[12]~[16]）是异步的，先等它跑完再排 [10]，输出顺序才是读的段落序
@@ -8909,6 +9036,7 @@ if (process.argv.indexOf('--live') >= 0) {
         lines(paths.testLog).slice(-14).join('\n')), lines(paths.testLog).slice(-3));
     ok('同一条 reward 也进了 store 摘要的「序列=」（面板/store 行看得到点位数）',
       /store 表=\d+人\/\d+帖 序列=\d+min\/\d+day/.test(lines(paths.testLog).slice(-14).join('\n')), lines(paths.testLog).slice(-1));
+
 
     console.log('\n合计 ' + pass + ' 通过 / ' + fail + ' 失败');
     process.exit(fail ? 1 : 0);

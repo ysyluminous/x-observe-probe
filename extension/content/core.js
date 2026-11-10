@@ -7,9 +7,9 @@
 // 页面里我只留一个节点（右下角浮标），详面板搬到扩展自己的 Side Panel ⇒ 注入节点归零是这次换壳的真收益。
 (function () {
   'use strict';
-  const VER = '0.11.17';
+  const VER = '0.11.18';
 
-  const BUILD = '2026-11-05-r';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
+  const BUILD = '2026-11-10-a';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
   const SINK = 'http://127.0.0.1:8765';
   const STORE_KEY = 'ysy.xprobe.v1';
   // 浏览器这边只留「运行态」，整页原文的去处是本机 xprobe.db（sink-9）。
@@ -166,6 +166,12 @@
   const BENCH_ID = 'ysy-xprobe-ext-bench'; // v0.9.0 标杆窗口：只在开着时挂进页面，关闭整棵摘掉
   const BPBTN_ID = 'ysy-xprobe-ext-bpbtn';   // v0.9.3 标杆帖子窗口的钮（label 带条数，与「标杆」同款胶囊）
   const BENCHP_ID = 'ysy-xprobe-ext-benchp'; // v0.9.3 标杆帖子窗口：只在开着时挂进页面，关闭整棵摘掉
+  // v0.11.18 art-020 本页热度榜：右缘列第八颗「热」+ 展开列表（挂在右缘那一列，不另起全屏层） +
+  // 推文内流速徽标（RL-16 总闸 HOT_BADGE_KEY 默认关，关掉当场从 X DOM 摘净）。口径见 skills/SKILL.md RL-28。
+  const HOTBTN_ID = 'ysy-xprobe-ext-hotbtn';
+  const HOTLIST_ID = 'ysy-xprobe-ext-hotlist';
+  const HOT_BADGE_CLS = 'ysy-xprobe-hotvel';   // 推文内流速徽标：靠 class 认领，一份页面几十个
+  const HOT_BADGE_KEY = 'ysy.xprobe.hotbadge'; // 独立总闸：默认关（与拉黑徽标那道闸分开，互不牵连）
   const PEER_IDS = ['ysy-xprobe-fab', 'ysy-xprobe-panel'];
   let fabApplied = '';              // 上一次真正写进 DOM 的浮标状态（三态只在翻转时写）
   const fabLab = {};                // 钮内 label span（v0.9.5 两段式：label + 角标；id → span）
@@ -5623,6 +5629,8 @@
   // （badgeNeedScan，我自己缝的节点不算，否则就是自激）、用户刚点了拉黑（force）、或满 BADGE_HEARTBEAT_MS 一次兜底。
   function renderBlocks(force) {
     const now = Date.now();
+    // art-020 热度徽标是独立总闸（默认关），挂在节拍但不受拉黑徽标那道闸牵连；闸关时这是一次便宜的 GM 读。
+    try { hotBadgeAuto(); } catch (e) { /* 徽标那一腿不该把采集节拍搞挂 */ }
     // 总闸在限流之前：关着的时候连「要不要扫」都不参与判断，只在做过一次清场后静默返回。
     // force（用户刚点了拉黑）也不例外——那条动作现在发生在自家面板里，页面这边不该有东西冒出来。
     if (!badgeGet()) {
@@ -6775,6 +6783,8 @@
       };
       bar.append(mk(FBTN_ID, '关', '本页用户名单', '本页用户列表（已关注/未关注切换；点条目滚动到那条帖子的位置，不导航）', toggleFlist));
       bar.append(mk(CBTN_ID, '榜', '本页曝光榜', '开/收本页曝光榜卡片（右上角；详面板在卡片头「详」）', toggleCard));
+      // v0.11.18 art-020 第八颗：本页热点（按每小时浏览量排榜；点条目只在榜内高亮、不滚动页面）。
+      bar.append(mk(HOTBTN_ID, '热', '本页热点', '本页热点榜：把当前页面已加载的推文按每小时浏览量降序排列；只读 DOM、只在本机算，点条目只在榜内高亮、不滚动页面', hotToggle));
       bar.append(mk(RBTN_ID, '回', '待回关', '', openFollowback));
       // v0.9.0 第五颗：标杆窗口（人数在右上角小角标；方案 A 起钮面单字「杆」，全称在 hover 标签）
       bar.append(mk(BBTN_ID, '杆', '标杆账号', '标杆名单窗口（**按人**的那本账，与下面「标帖」那本按条的账分开；'
@@ -6826,6 +6836,7 @@
       [FBTN_ID, flistOpen && !flistFb],
       [RBTN_ID, flistOpen && flistFb],
       [CBTN_ID, cardOpen],
+      [HOTBTN_ID, hotListOpen],
       [BBTN_ID, benchOpen],
       [BPBTN_ID, benchPOpen],
       [AIBTN_ID, aiOpen],
@@ -6944,6 +6955,235 @@
     }
     return b;
   }
+  // ---------- ART020 本页热度榜（口径参考，未复制代码）----------
+  // 只把「当前 DOM 已经加载出来的」推文按每小时浏览量排榜；数据只从 DOM 读、只在本机算，
+  // 不新增网络出口、不点击、不滚动。口径与阈值见 skills/SKILL.md RL-28。
+  function hotFinite(x) { return isFinite(x) ? x : 0; }
+  function hotFirstNum(src) {
+    if (src == null) return null;
+    // 千分位逗号、空格、NBSP(\u00a0)、窄不换行空格(\u202f) 一律去掉后取第一个整数。
+    const s = String(src).replace(/[\u00a0\u202f,\s]/g, '');
+    const m = s.match(/\d+/);
+    return m ? parseInt(m[0], 10) : null;
+  }
+  function hotAllNums(src) {
+    if (src == null) return [];
+    const s = String(src).replace(/[\u00a0\u202f,\s]/g, '');
+    return (s.match(/\d+/g) || []).map((x) => parseInt(x, 10));
+  }
+  function hotFmt(n) {
+    if (!isFinite(n)) return '—';
+    n = Math.round(n);
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e4) return Math.round(n / 1e3) + 'k';   // 12,000 → 12k（整k不带小数）
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';  // 1,000 → 1.0k
+    return String(n);
+  }
+  function hotTier(v) {
+    if (v >= 10000) return { key: 'viral', color: UI_TOK.red, icon: '🔥' };
+    if (v >= 1000) return { key: 'trending', color: UI_TOK.amber, icon: '🚀' };
+    return { key: 'normal', color: UI_TOK.acc, icon: '🌱' };
+  }
+  function hotScore(f, velocity) {
+    const v = f.views > 0 ? f.views : 1;
+    const l = f.likes > 0 ? f.likes : 1;
+    const s = 40 * Math.min(hotFinite(velocity / 50000), 1)
+            + 25 * Math.min(hotFinite(((f.likes + f.rt + f.replies) / v) / 0.1), 1)
+            + 20 * Math.min(hotFinite((f.rt / l) / 0.5), 1)
+            + 15 * Math.min(hotFinite((f.bm / l) / 0.3), 1);
+    return Math.min(Math.round(s), 100);
+  }
+  // 范围只认四类页面；其余（搜索/通知/设置等）返回空串 = 本页热点不生效。
+  const HOT_RESERVED = { home: 1, i: 1, explore: 1, notifications: 1, messages: 1,
+    bookmarks: 1, lists: 1, settings: 1, search: 1, compose: 1 };
+  function hotScope(pathname) {
+    const p = String(pathname || '');
+    if (p === '/' || p === '/home') return 'home';
+    if (/^\/i\/lists\/[^/]+/.test(p) || /^\/[^/]+\/lists\/[^/]+/.test(p)) return 'list';
+    if (/^\/[^/]+\/status\/\d+/.test(p)) return 'status';
+    const seg = p.replace(/^\/+/, '').split('/');
+    if (seg.length === 1 && seg[0] && !HOT_RESERVED[seg[0].toLowerCase()]) return 'profile';
+    return '';
+  }
+  // 首页有 tab 时以当前 aria-selected 的 tab 为准；取不到再回退 URL。
+  function hotActiveScope(root) {
+    const base = hotScope(location.pathname);
+    if (base !== 'home') return base;
+    const tabs = (root || document).querySelectorAll('[role="tab"][aria-selected="true"]') || [];
+    for (let i = 0; i < tabs.length; i++) {
+      const t = txt(tabs[i]);
+      if (/为你推荐|For you|For You|正在关注|Following/i.test(t)) return 'home';
+    }
+    return base;
+  }
+  // 从一条 article 按 RL-28 口径抓字段。closest 过滤保证只认「属于本条推文」的节点，不抓嵌套引用推的数字。
+  function hotParseArticle(art, now, promotedIds) {
+    if (!art) return null;
+    let tid = '';
+    const links = art.querySelectorAll('a[href*="/status/"]') || [];
+    for (let i = 0; i < links.length; i++) {
+      const mm = String(links[i].getAttribute('href') || '').match(/\/status\/(\d+)/);
+      if (mm) { tid = mm[1]; break; }
+    }
+    function own(node) { return !!(node && node.closest && node.closest('article[data-testid="tweet"]') === art); }
+    function qs(sel) { const n = art.querySelector(sel); return own(n) ? n : null; }
+    // 推广：placementTracking 或「Ad / 推广 / Promoted」标记，或命中调用方给的 id 集合。
+    const promMark = art.querySelector('[data-testid="placementTracking"]')
+      || /推广|\bAd\b|\bPromoted\b/i.test(String(art.textContent || '').slice(0, 80));
+    if (promMark || (promotedIds && promotedIds[tid])) return { skip: 'promoted', tid: tid };
+    // views：专属 analytics 链接的 aria-label 首数字；没有就记 miss（不编 0）。
+    let viewEl = null;
+    const analytics = art.querySelectorAll('a[href*="/analytics"]') || [];
+    for (let j = 0; j < analytics.length; j++) {
+      const h = String(analytics[j].getAttribute('href') || '');
+      if (own(analytics[j]) && (!tid || h.indexOf('/status/' + tid + '/analytics') >= 0)) { viewEl = analytics[j]; break; }
+    }
+    const views = viewEl ? hotFirstNum(viewEl.getAttribute('aria-label')) : null;
+    const timeEl = qs('time[datetime]');
+    const dt = timeEl ? timeEl.getAttribute('datetime') : '';
+    const createdMs = dt ? Date.parse(dt) : NaN;
+    if (views == null || !(createdMs > 0)) return { skip: 'missing', tid: tid, views: views, dt: dt || null };
+    const hours = Math.max((now - createdMs) / 3600000, 0.1);
+    const velocity = views / hours;
+    const likeEl = qs('[data-testid="like"], [data-testid="unlike"]');
+    const rtEl = qs('[data-testid="retweet"]');
+    const repEl = qs('[data-testid="reply"]');
+    const likes = likeEl ? (hotFirstNum(likeEl.getAttribute('aria-label')) || 0) : 0;
+    const rt = rtEl ? (hotFirstNum(rtEl.getAttribute('aria-label')) || 0) : 0;
+    const replies = repEl ? (hotFirstNum(repEl.getAttribute('aria-label')) || 0) : 0;
+    const groupEl = qs('[role="group"]');
+    const gnums = groupEl ? hotAllNums(groupEl.getAttribute('aria-label')) : [];
+    const bm = gnums.length >= 5 ? gnums[gnums.length - 2] : 0;
+    // 用户名：显示名第一段 → @handle → 正文前 60 字。
+    let name = '';
+    const nameEl = qs('[data-testid="User-Name"]');
+    if (nameEl) name = txt(nameEl).split(/[\s@·]/).filter(Boolean)[0] || '';
+    if (!name) {
+      const ha = qs('a[href^="/"]');
+      const hm = ha && String(ha.getAttribute('href') || '').match(/^\/([^/]+)/);
+      name = hm ? '@' + hm[1] : '';
+    }
+    const textEl = qs('[data-testid="tweetText"]');
+    const text = textEl ? txt(textEl) : '';
+    if (!name) name = clip(text, 60);
+    const f = { views: views, likes: likes, rt: rt, replies: replies, bm: bm };
+    const tier = hotTier(velocity);
+    return {
+      tid: tid, name: name, text: clip(text, 200), views: views, likes: likes, rt: rt, replies: replies,
+      bm: bm, createdMs: createdMs, hours: hours, velocity: velocity, score: hotScore(f, velocity),
+      tier: tier.key, color: tier.color, icon: tier.icon,
+      viewLabel: hotFmt(views), velLabel: hotFmt(velocity) + '/h',
+    };
+  }
+  // 扫当前 DOM 全部 article → 按 tid 去重 → 排推广 → 按 velocity 降序 → 取前 N。
+  // miss/cov/promoted 如实计数：缺 views 或缺时间的推文直接不进榜、不填 0。
+  function hotBoard(now, opts) {
+    const o = opts || {};
+    const n = Math.max(1, Math.min(100, Number(o.limit || 10)));
+    const at = now == null ? Date.now() : now;
+    const arts = Array.prototype.slice.call(document.querySelectorAll('article[data-testid="tweet"]') || []);
+    const seen = Object.create(null);
+    const rows = [];
+    let miss = 0, promoted = 0;
+    arts.forEach((art) => {
+      const r = hotParseArticle(art, at, o.promotedIds || null);
+      if (!r || r.skip) { if (r && r.skip === 'promoted') promoted++; else miss++; return; }
+      if (seen[r.tid]) return;   // 虚拟列表回收后同一 id 重现，只算一次
+      seen[r.tid] = 1;
+      rows.push(r);
+    });
+    rows.sort((a, b) => b.velocity - a.velocity || b.views - a.views);
+    return { scope: hotActiveScope(o.root), cov: arts.length, miss: miss, promoted: promoted,
+      total: rows.length, rows: rows.slice(0, n) };
+  }
+  // 推文内流速徽标：独立总闸，默认关；开才挂、关当场摘净（RL-16）。只认自家 class/data-xprobe。
+  function hotBadgeGet() { try { return GM_getValue(HOT_BADGE_KEY, false) === true; } catch (e) { return false; } }
+  function hotBadgeSweep() {
+    let n = 0;
+    try {
+      (document.querySelectorAll('.' + HOT_BADGE_CLS + ', [data-xprobe="hotvel"]') || []).forEach((x) => {
+        try { x.remove(); n++; } catch (e) { /* 已被 React 摘掉 */ }
+      });
+    } catch (e) { /* 选择器抛了下一轮再摘 */ }
+    return n;
+  }
+  function hotBadgeRender() {
+    if (!hotBadgeGet()) return 0;
+    const board = hotBoard(Date.now(), { limit: 1000 });
+    const byTid = Object.create(null);
+    board.rows.forEach((r) => { byTid[r.tid] = r; });
+    const arts = document.querySelectorAll('article[data-testid="tweet"]') || [];
+    let made = 0;
+    arts.forEach((art) => {
+      let tid = '';
+      const links = art.querySelectorAll('a[href*="/status/"]') || [];
+      for (let i = 0; i < links.length; i++) {
+        const m = String(links[i].getAttribute('href') || '').match(/\/status\/(\d+)/);
+        if (m) { tid = m[1]; break; }
+      }
+      const r = byTid[tid];
+      if (!r || art.querySelector('.' + HOT_BADGE_CLS)) return;
+      const b = el('span', { position: 'absolute', right: '0', top: '0', zIndex: '2',
+        font: '10px ' + FAB_FONT, color: r.color, background: UI_TOK.bg,
+        padding: '1px 3px', borderRadius: '4px', border: '1px solid ' + UI_TOK.line }, r.icon + ' ' + r.velLabel);
+      b.setAttribute('class', HOT_BADGE_CLS);
+      b.setAttribute('data-xprobe', 'hotvel');
+      art.appendChild(b);
+      made++;
+    });
+    return made;
+  }
+  function setHotBadge(v) {
+    const on = !!v;
+    try { GM_setValue(HOT_BADGE_KEY, on); } catch (e) { /* 存不进本次会话内生效 */ }
+    if (on) hotBadgeRender(); else hotBadgeSweep();
+    return { ok: true, hotbadge: on };
+  }
+  function hotBadgeAuto() { if (hotBadgeGet()) hotBadgeRender(); }
+  // 展开列表：挂在右缘那一列（documentElement 下的 fixed 浮层），不新建全屏层、不贴边隐藏、不可拖动。
+  let hotListOpen = false;
+  let hotListRoot = null;
+  function hotListBuild() {
+    const board = hotBoard(Date.now(), { limit: 10 });
+    const root = el('div', { position: 'fixed', right: '14px', bottom: '286px', width: '344px',
+      maxHeight: '62vh', overflowY: 'auto', zIndex: '2147483647', background: UI_TOK.panel,
+      backdropFilter: UI_TOK.blur, border: '1px solid ' + UI_TOK.line, borderRadius: UI_TOK.rPanel,
+      padding: '10px 12px', boxShadow: UI_TOK.shadow, font: UI_TOK.font, color: UI_TOK.ink }, '');
+    root.id = HOTLIST_ID;
+    root.appendChild(uiTitle('本页热点'));
+    root.appendChild(el('div', { color: UI_TOK.inkFaint, margin: '4px 0 8px' },
+      '范围=' + (board.scope || '不适用') + ' · 覆盖 ' + board.cov + ' 条 · 入榜 ' + board.total
+      + ' · 缺数 ' + board.miss + ' · 推广剔 ' + board.promoted + ' · 按流速降序 · v' + VER));
+    if (!board.scope) root.appendChild(el('div', { color: UI_TOK.amber }, '当前页面不属于本页热点范围（首页/列表/主页/帖子页生效）'));
+    board.rows.forEach((r, i) => {
+      const row = el('div', { padding: '6px 4px', borderTop: '1px solid ' + UI_TOK.lineSoft }, '');
+      row.setAttribute('class', 'ysy-hot-row');
+      row.setAttribute('data-hot-id', r.tid);
+      const top = el('div', { display: 'flex', gap: '8px', alignItems: 'baseline' }, '');
+      top.append(el('span', { color: UI_TOK.inkDim }, '#' + (i + 1)));
+      top.append(el('span', { color: r.color }, r.icon));
+      top.append(el('span', { color: UI_TOK.ink }, clip(r.name, 22)));
+      top.append(el('span', { color: UI_TOK.amber }, hotFmt(r.views)));
+      top.append(el('span', { color: r.color }, r.velLabel));
+      row.appendChild(top);
+      row.appendChild(el('div', { color: UI_TOK.inkDim, overflow: 'hidden', textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap', marginTop: '2px' }, clip(r.text, 30)));
+      // 点条目只在本列表内高亮，绝不滚动页面（RL-1）：不调浏览器的元素滚入视图方法、不改 scrollY。
+      row.addEventListener('click', () => {
+        (root.querySelectorAll('.ysy-hot-row') || []).forEach((x) => x.setAttribute('class', 'ysy-hot-row'));
+        row.setAttribute('class', 'ysy-hot-row ysy-hot-on');
+      });
+      root.appendChild(row);
+    });
+    return root;
+  }
+  function renderHotList() {
+    if (hotListRoot) { hotListRoot.remove(); hotListRoot = null; }
+    hotListRoot = hotListOpen ? hotListBuild() : null;
+    if (hotListRoot) document.documentElement.appendChild(hotListRoot);
+  }
+  function hotToggle() { hotListOpen = !hotListOpen; renderHotList(); }
+
   function render() { fabBtn(); renderBlocks(); }
 
   // ---------- 调试开关（v0.6.8）----------
@@ -7019,6 +7259,7 @@
       own: ownHandle(), series: seriesForPanel(),
       rndMax: rndMaxGet(), debug: { on: debugGet(), lastAt: lastDebugAt ? new Date(lastDebugAt).toISOString() : '', everyMs: DEBUG_EVERY },
       badge: { on: badgeGet() },   // v0.8.9：页面内拉黑徽标的闸（v0.8.16 起默认开）；面板设置区照着它画开关
+      hotbadge: { on: hotBadgeGet() },  // v0.11.18 art-020：推文内流速徽标总闸，默认关；面板设置区照着它画开关
       last: last, missing: last ? missingFields(last) : [], notes: last ? knownGaps(last) : [], upsert: lastUpsert,
     };
   }
@@ -7055,6 +7296,8 @@
     setRndMax: (v) => setRndMax(v),
     // v0.8.9：页面内那颗「拉黑」钮的开关（v0.8.16 起默认开；关掉 = 当场摘干净、页面零注入）
     setBadge: (v) => setBadgeOn(!!v),
+    // v0.11.18 art-020：推文内流速徽标总闸（默认关；开=渲染、关=当场从 X DOM 摘净）
+    setHotBadge: (v) => setHotBadge(!!v),
     debugRec: () => { const dg = debugDigest(); dg.why = 'panel'; logRec('debug', dg); lastDebugAt = Date.now(); return dg; },
     // v0.6.9 F3：今日关注目标（基线留空=自动重算；填了=手动盖当场生效，全标签页合并后同频）
     goalSet: (v) => setGoal(v),
@@ -7247,6 +7490,11 @@
       setRndMax, rndMaxGet, setDebugOn, debugGet, debugDigest, setGoal, guardToday,
       // v0.8.9：页面内徽标总闸的三件套（自检要能直接拨它、看清场摘了几个节点，不靠猜）
       badgeGet, badgeSweep, setBadgeOn,
+      // v0.11.18 art-020 本页热度榜：纯函数（口径自检直接钉）+ 抓取/计算/开合 + 徽标总闸三件套
+      hotFirstNum, hotAllNums, hotFmt, hotTier, hotScore, hotScope, hotActiveScope, hotParseArticle, hotBoard,
+      hotBadgeGet, hotBadgeSweep, hotBadgeRender, setHotBadge, hotToggle, hotListBuild,
+      HOTBTN_ID, HOTLIST_ID, HOT_BADGE_CLS, HOT_BADGE_KEY,
+      __hot: () => ({ open: hotListOpen, root: !!hotListRoot }),
       // v0.11.4：关系标签的判定与占宽（纯函数，自检直接钉口径；flSeen 是「关注列表页扫过没扫过」的总开关）
       relVerdict, followersListSeen, relBudget, relChipEl, relChipRow, REL_CLS,
       // v0.11.7 桥腿的口子：ask（一次一问的问询本体，自检里配桩直接敲）、relFiber（缓存/节拍的状态读数）

@@ -1,0 +1,97 @@
+{
+  "card": 4,
+  "art": "art-020",
+  "title": "本页热度榜：按每小时浏览量排名 + 推文流速徽标",
+  "project": "x-observe-probe",
+  "agent": "workbuddy",
+  "date": "2026-11-10",
+  "ver": "0.11.18",
+  "build": "2026-11-10-a",
+  "approach": "口径参考，未复制代码（参考插件为商业产品，本仓库 MIT；仅照需求文档的口径重写，代码行一行未复制）",
+  "preexisting": {
+    "stash": "stash@{0}: On main: coord-4-preexisting",
+    "note": "开工前工作树有 6 个未提交改动（sw.js/core.js/manifest.json/sidepanel.html/sidepanel.js/probe-selftest.js），主题为「云端接口迁移到智枢 Go（v0.12.1/0.12.2）」，与本卡无关；已 git stash push -u 保存，未 pop，本次只提交本卡改动。该 stash 与本卡同改若干文件，恢复时可能需人工解冲突。"
+  },
+  "files": [
+    "extension/content/core.js",
+    "extension/background/sw.js",
+    "extension/manifest.json",
+    "extension/ui/sidepanel.html",
+    "extension/ui/sidepanel.js",
+    "probe-selftest.js",
+    "skills/SKILL.md",
+    "handoff/receipts/0020.json"
+  ],
+  "acceptance": [
+    {
+      "id": 1,
+      "text": "node probe-selftest.js 原 1678 条全绿，新增断言单独计数通过",
+      "status": "PASS",
+      "evidence": "合计 1699 通过 / 0 失败；原 1678 条保持全绿，[art-020] 段新增 21 条断言单独打印并通过"
+    },
+    {
+      "id": 2,
+      "text": "打开 x.com/home，右缘列出现「本页热点」，条目按流速降序，第一名满足 |显示流速 - views/年龄(h)| < 1%",
+      "status": "PASS",
+      "evidence": "自检沙箱构造 home fixture：fabBtn 挂第八颗「热」钮（HOTBTN_ID）；hotToggle 展开 fixed 浮层 HOTLIST_ID（标题「本页热点」）；榜单 rows = [111:12000, 222:1000, 333:100] 降序；第一名 velocity 与 views/hours 误差 = 0%（断言 <1%）。注：真机目视需在登录态浏览器复核，本环境以 DOM 桩等价验证。"
+    },
+    {
+      "id": 3,
+      "text": "构造断言：12000/1h→12k/h红🔥；3000/3h→1.0k/h橙🚀；500/5h→100/h绿🌱",
+      "status": "PASS",
+      "evidence": "hotFirstNum/hotFmt/hotTier/hotScore 纯函数 + hotParseArticle 三条构造断言逐字通过，velLabel/tier/icon == [12k/h viral 🚀…] 全匹配"
+    },
+    {
+      "id": 4,
+      "text": "推广推文不进榜（命中 placementTracking 跳过）",
+      "status": "PASS",
+      "evidence": "fixture 含一条 placementTracking 推；hotBoard 报 promoted=1，榜单无该 tid；另有嵌套引用推 closest 过滤断言：外层只认自己的 999999，不串内层 7"
+    },
+    {
+      "id": 5,
+      "text": "同一条推只出现一次（虚拟列表回收回滚，条目数不增加）",
+      "status": "PASS",
+      "evidence": "fixture 中 tid=111 出现两次；hotBoard 按 tid 去重后 total=3（6 条覆盖 − 1 推广 − 1 缺数 − 1 重复），rows 中 111 仅一次"
+    },
+    {
+      "id": 6,
+      "text": "关掉总闸后 X DOM 零徽标（[id^=ysy] 只剩右下角浮标，header row 零徽标）",
+      "status": "PASS",
+      "evidence": "独立总闸 HOT_BADGE_KEY 默认关；setHotBadge(true) 挂 4 颗 .ysy-xprobe-hotvel（data-xprobe=hotvel）；setHotBadge(false) 当场摘净：class 节点 0、data-xprobe 节点 0，X 自己的 div[role=group] 节点数保持 6 不变"
+    },
+    {
+      "id": 7,
+      "text": "manifest permissions 仍为原来 6 项，未新增三条高危权限",
+      "status": "PASS",
+      "evidence": "静态断言 mf.permissions.length == 6 且不含 scripting/webRequest/cookies（真值为 storage/unlimitedStorage/sidePanel/tabs/nativeMessaging/alarms；brief 所述「5 项」与仓库实际不符，按仓库实际 6 项守住不新增）"
+    },
+    {
+      "id": 8,
+      "text": "版本戳四处一致（manifest version == core VER；core BUILD == sidepanel PANEL_BUILD）",
+      "status": "PASS",
+      "evidence": "manifest.version=0.11.18 == core VER=0.11.18；core BUILD=2026-11-10-a == sidepanel PANEL_BUILD=2026-11-10-a"
+    },
+    {
+      "id": 9,
+      "text": "点击榜单条目页面不滚动（window.scrollY 前后不变），只有列表内高亮变化",
+      "status": "PASS",
+      "evidence": "沙箱把 window.scrollY 设为 300，fire click 后 scrollY 仍为 300、条目未被 scrollIntoView（__scrolls 未产生），class 由 ysy-hot-row 变为 ysy-hot-row ysy-hot-on；再点一次整棵摘除"
+    }
+  ],
+  "hard_constraints": {
+    "no_source_copy": "PASS — 仅按文档口径重写，未复制参考插件源码；提交说明标注「口径参考，未复制代码」",
+    "no_draggable_panel": "PASS — 落点仅右缘列 fixed 浮层 HOTLIST_ID，点「热」开合，无全屏层、不贴边隐藏、不可拖动",
+    "no_click_scroll": "PASS — 点条目只在本列表内高亮，不调元素滚入视图方法、不改 scrollY",
+    "badge_master_gate_default_off": "PASS — 独立总闸 ysy.xprobe.hotbadge 默认关，关掉当场从 X DOM 摘净",
+    "no_new_permission": "PASS — permissions 仍 6 项",
+    "no_new_network": "PASS — hot* 全部只读 DOM + 本机计算，无 fetch/XHR/GM_xmlhttpRequest，无新 sink 通道",
+    "no_fabricated_numbers": "PASS — 缺 views/createdAt 直接不进榜并记 miss/cov"
+  },
+  "selftest": {
+    "command": "node probe-selftest.js",
+    "total": "1699 通过 / 0 失败",
+    "baseline": "1678 通过 / 0 失败",
+    "art020_new": "21 通过 / 0 失败"
+  },
+  "note": "skills/SKILL.md 已补 RL-28 本页热度榜口径，但 skills/ 被 .gitignore 忽略（项目设定：内核目录不进本私有库），故 RL-28 不随本次提交进远端。验收 2/6/9 的真机目视部分在本自动化环境以 probe-selftest DOM 桩等价验证，建议在有 x.com 登录态的浏览器上做一次目视复核。"
+}

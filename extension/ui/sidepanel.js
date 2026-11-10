@@ -10,7 +10,7 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   // 面板自己的版本戳（不是 core 报的那个）：⟳ 之后若这颗还是旧值，说明这个 Side Panel 文档
   // 没跟着换（Chrome 会让已打开的面板继续跑旧 JS），先关掉重开面板再谈别的。
-  const PANEL_BUILD = '2026-11-05-r';
+  const PANEL_BUILD = '2026-11-10-a';
   const out = { err: '' };
   let st = null, lastStateAt = 0, view = 'home', rndDirty = false, ownDirty = false, whoSel = '';
   // state 回包可能乱序（广场那条 30 秒轮询 + 关注事件触发的 READ 会同时在飞）：
@@ -1141,6 +1141,7 @@
     setTxt('bHtml', '全文HTML: ' + (st.dump && st.dump.html ? '开' : '关'));
     setTxt('bDebug', '诊断模式: ' + (dbgOn ? '开' : '关'));
     setTxt('bBadge', '页面内徽标: ' + (st.badge && st.badge.on ? '开' : '关'));
+    setTxt('bHotBadge', '热点徽标: ' + (st.hotbadge && st.hotbadge.on ? '开' : '关'));
   }
   function setView(v) {
     view = ['home', 'mine', 'plaza', 'debug', 'set', 'forecast'].indexOf(v) >= 0 ? v : 'home';
@@ -1897,6 +1898,7 @@
     // v0.8.9：页面内那颗「拉黑」徽标的闸。v0.8.16 起默认开（用户点名「改成默认显示」）；core 每次判都现读 GM，所以设置里拨一下就全标签页同频，
     // 且关的那一刻就把已缝进页面的节点摘干净（不用等下一个心跳）。
     bBadge: () => cmd('setBadge', !(st && st.badge && st.badge.on)),
+    bHotBadge: () => cmd('setHotBadge', !(st && st.hotbadge && st.hotbadge.on)),
     bDebug: () => {
       const on = !(st && st.debug && st.debug.on);
       return cmd('setDebug', on).then(() => { if (on) setView('debug'); });

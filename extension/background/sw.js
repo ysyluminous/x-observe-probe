@@ -21,7 +21,7 @@
   const SER_MAX = 40;
   const MIN_MAX = 1440;
   const IMP_MAX = 365;
-  const CMDS = ['state', 'collect', 'probe', 'dumpOnce', 'setDump', 'setDumpHtml', 'ping', 'flush', 'clear', 'query', 'stats', 'export', 'rebuild', 'store', 'sample', 'impAdd', 'impDel', 'seriesView', 'impRestoreDb', 'ownSet', 'setDebug', 'setRndMax', 'debugRec', 'goalSet', 'goalNow', 'setBadge'];
+  const CMDS = ['state', 'collect', 'probe', 'dumpOnce', 'setDump', 'setDumpHtml', 'ping', 'flush', 'clear', 'query', 'stats', 'export', 'rebuild', 'store', 'sample', 'impAdd', 'impDel', 'seriesView', 'impRestoreDb', 'ownSet', 'setDebug', 'setRndMax', 'debugRec', 'goalSet', 'goalNow', 'setBadge', 'setHotBadge'];
 
   chrome.runtime.onInstalled.addListener(() => {
     try { chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }); } catch (e) { /* 旧版本没这个 API */ }
