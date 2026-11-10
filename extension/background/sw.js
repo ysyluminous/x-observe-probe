@@ -83,6 +83,18 @@
       }
       return plan;
     }
+    // v0.12.0 云端模式「推完即清」：POST /dbpurge 只认 q（五张台账白名单）+ upto（服务端 ack 的 id）。
+    // 宿主与 sink 两边都再验一次形状；这里拦掉非法值是为了不让「参数丢了」走到删库那一步。
+    if (m === 'POST' && u.pathname === '/dbpurge') {
+      let o;
+      try { o = JSON.parse(String(msg.data || '')); } catch (e) { return null; }
+      if (!o || typeof o !== 'object') return null;
+      const q = String(o.q || '');
+      const upto = o.upto;
+      if (['bench_marks_ac', 'bench_marks_po', 'lib_users', 'lib_posts', 'block_marks'].indexOf(q) < 0) return null;
+      if (!Number.isInteger(upto) || upto < 0 || upto > 999999999999) return null;
+      return { t: 'dbpurge', q: q, upto: upto };
+    }
     // v0.8.8 本机占用与清理：GET /fs 只读（auto=0 时连每日自动清理也不撞），
     // POST /fs 的 body 已由 fsPlan 筛成 op/target/keep/dry 四个受控值，路径在这边不存在
     if (u.pathname === '/fs' && (m === 'GET' || m === 'POST')) {
@@ -466,6 +478,43 @@
         }
         return Object.assign({ ok: true, rows: body.rows }, meta());
       });
+  }
+
+  // ---------- 本机台账清理（v0.12.0：只在云端确认落库之后）----------
+  // 单一数据源纪律：云端模式以云端为准，本机台账只是「待发件箱」。
+  // 只有服务端回了 persisted=true（新后端才有这一格）且 writeFail=0，才允许按 ack 水位删本机行。
+  // 顺序必须是「先删本机、再写水位」：删成功而水位写失败 ⇒ 下次整批重推、唯一键去重，安全；
+  // 反过来（先写水位）一旦清理失败，那些行就永远留在本地却再也不会被读出来。
+  const DB_PURGE_URL = 'http://127.0.0.1:8765/dbpurge';
+  const PURGE_Q = ['bench_marks_ac', 'bench_marks_po', 'lib_users', 'lib_posts', 'block_marks'];
+  function dbpurge(q, upto) {
+    const name = String(q || '');
+    const n = Number(upto);
+    const meta = () => ({ purge: name, upto: n, via: chan.via || '', at: Date.now() });
+    if (PURGE_Q.indexOf(name) < 0 || !Number.isInteger(n) || n < 0 || n > 999999999999)
+      return Promise.resolve(Object.assign({ ok: false, err: '本机清理参数不合法' }, meta()));
+    return xhr({ url: DB_PURGE_URL, method: 'POST', timeout: 8000,
+      headers: { 'content-type': 'application/json' },
+      data: JSON.stringify({ q: name, upto: n }) }).then((r) => {
+      if (r.timeout) return Object.assign({ ok: false, err: '本机库 8 秒没回（清理没做，本地数据保留）' }, meta());
+      if (r.err) return Object.assign({ ok: false, err: r.err }, meta());
+      let body;
+      try { body = JSON.parse(r.responseText); } catch (e) {
+        return Object.assign({ ok: false, err: '回包不是 JSON（宿主/sink 版本旧？）' }, meta());
+      }
+      if (!body || body.ok !== true) return Object.assign({ ok: false, err: (body && body.err) || '清理被拒' }, meta());
+      return Object.assign({ ok: true, deleted: Number(body.deleted) || 0, upto: Number(body.upto) || 0 }, meta());
+    });
+  }
+  // pairs = [[查询名, ack水位], ...]；只处理水位 >0 的项。任一项失败 ⇒ purgeOk=false，调用方不得推进水位。
+  function purgeAcked(pairs) {
+    const jobs = (pairs || []).filter((p) => p && Number(p[1]) > 0);
+    if (!jobs.length) return Promise.resolve({ purgeOk: true, purged: [] });
+    return Promise.all(jobs.map((p) => dbpurge(p[0], p[1]))).then((rs) => ({
+      purgeOk: rs.every((x) => !!x.ok),
+      purged: rs.map((x, i) => ({ q: jobs[i][0], upto: jobs[i][1], ok: !!x.ok,
+        deleted: x.deleted || 0, err: x.err || '' })),
+    }));
   }
 
   // ---------- 本机占用与清理（v0.8.8）----------
@@ -894,6 +943,37 @@
     return cloudEnv().then((env) => cloudCall(baseOf(env), path, token, bodyObj, ms || CLOUD_MS));
   }
 
+  // v0.12.0 浏览器侧同样是「云端模式就以云端为准」：只清已经确认落库的那些行，
+  // 按 handle|day|at 与 at|dir|target 精确配对 —— 清库与采集并发时不会把后来新采的那几行一起抹掉。
+  // guard 里的 cool / goal / follows 不是上送队列，是本机运行态，一个字不动。
+  function clearUploadedBrowserRows(payload) {
+    return Promise.all([getKey(SERIES_KEY), getKey(GUARD_KEY)]).then((v) => {
+      const series = (v[0] && typeof v[0] === 'object') ? v[0] : {};
+      const guard = (v[1] && typeof v[1] === 'object') ? v[1] : {};
+      const dayKeys = {};
+      [].concat(Array.isArray(payload.dayRows) ? payload.dayRows : []).forEach((d) => {
+        dayKeys[String(d.handle) + '|' + String(d.day) + '|' + String(d.at || '')] = 1;
+      });
+      const evKeys = {};
+      [].concat(Array.isArray(payload.followEvents) ? payload.followEvents : []).forEach((e) => {
+        evKeys[String(e.at) + '|' + String(e.dir || '') + '|' + String(e.target || '')] = 1;
+      });
+      const nextSeries = {};
+      Object.keys(series).forEach((h) => {
+        const s = (series[h] && typeof series[h] === 'object') ? series[h] : {};
+        const imp = [].concat(Array.isArray(s.imp) ? s.imp : []).filter((p) =>
+          !dayKeys[h + '|' + String(p && p.day) + '|' + String((p && p.effAt) || (p && p.at) || '')]);
+        nextSeries[h] = Object.assign({}, s, { imp: imp });
+      });
+      const nextGuard = Object.assign({}, guard, {
+        ev: [].concat(Array.isArray(guard.ev) ? guard.ev : []).filter((e) =>
+          !evKeys[String(e && e.at) + '|' + String((e && e.dir) || '') + '|' + String((e && (e.handle || e.id)) || '')]),
+      });
+      const o = {}; o[SERIES_KEY] = nextSeries; o[GUARD_KEY] = nextGuard;
+      return setKey(o).then((w) => ({ ok: !!w.ok, err: w.err || '' }));
+    });
+  }
+
   function uploadCloudNow() {
     return cloudConf().then((c) => {
       if (!c.on || !c.token) return { ok: false, err: '云端同步没开或这一档还没登录（设置里「运行模式」打开、并在弹窗里登录；换档要重新登录那一档）' };
@@ -914,7 +994,11 @@
           putStat(r.ok, r.err, r.needLogin);
           // 把这一趟到底推了几行带回去：v0.10.3 起「登录成功」那一趟要把两条腿各自的结果念给人听，
           // 而 CLOUD_STAT_KEY 是「上一次的结果」，同一刻读它跟读这次的结果是同一份账，不必再绕存储
-          return Object.assign({}, r, { dayRows: payload.dayRows.length, followEvents: payload.followEvents.length });
+          const out = Object.assign({}, r, { dayRows: payload.dayRows.length, followEvents: payload.followEvents.length });
+          // v0.12.0：服务端明确 persisted=true 且 writeFail=0 才算落库；没确认就一个字节都不从浏览器删
+          const d = (r.ok && r.data) ? r.data : {};
+          if (d.persisted !== true || Number(d.writeFail || 0) !== 0) return out;
+          return clearUploadedBrowserRows(payload).then((x) => Object.assign(out, { browserCleared: x }));
         });
       });
     });
@@ -1041,10 +1125,21 @@
           // 水位：只在 200 之后抬、只抬到服务端给的 ack、只许往上不许回头，而且只写当前这一档那本。
           // 服务端没回 ack（老服务端 / 空批）就原地不动 ⇒ 下次整批重推，唯一键去重，宁重不漏。
           const next = { ac: ackOf(d.ackAc, wm.ac), po: ackOf(d.ackPo, wm.po) };
-          const o = {}; o[xsWmKey(c.env, c)] = next;
-          return setKey(o).then((w) => w.ok
-            ? Object.assign({}, r, cnt, { wm: next, stalled: (next.ac === wm.ac && acRows.length > 0) })
-            : Object.assign({}, r, cnt, { wmWarn: '水位没落盘：下次会再推这一批（服务端按 设备+台账 id 去重，不会重）' }));
+          // v0.12.0：服务端必须明确回 persisted=true 且两条腿 writeFail=0，才算「真的落库了」。
+          // 老服务端没这两格 ⇒ 不删本机，宁可一直当待发件箱留着。
+          const confirmed = d.persisted === true && Number(d.acWriteFail || 0) === 0 && Number(d.poWriteFail || 0) === 0;
+          const jobs = [
+            confirmed && next.ac > wm.ac ? ['bench_marks_ac', next.ac] : null,
+            confirmed && next.po > wm.po ? ['bench_marks_po', next.po] : null,
+          ].filter(Boolean);
+          return purgeAcked(jobs).then((pg) => {
+            if (!pg.purgeOk) return Object.assign({}, r, cnt, { ok: false, wm: wm, purge: pg,
+              err: '本机待发台账清理失败，水位没推进：' + pg.purged.filter((x) => !x.ok).map((x) => x.err).join('；') });
+            const o = {}; o[xsWmKey(c.env, c)] = next;
+            return setKey(o).then((w) => w.ok
+              ? Object.assign({}, r, cnt, { wm: next, purge: pg, stalled: (next.ac === wm.ac && acRows.length > 0) })
+              : Object.assign({}, r, cnt, { wmWarn: '水位没落盘：下次会再推这一批（服务端按 设备+台账 id 去重，不会重）', purge: pg }));
+          });
         });
       }));
     }).then(finish, (e) => finish({ ok: false, err: String((e && e.message) || e) }));
@@ -1170,7 +1265,7 @@
       if (!deviceId) return finish({ ok: false, err: 'deviceId 没生成出来（存储写失败？）' });
       return libWm(c.env, c).then((wm0) => {
         const wm = { au: wm0.au, po: wm0.po };
-        let auSent = 0, poSent = 0, batches = 0, stopAu = false, stopPo = false, stallAu = false, stallPo = false, stopped = '', err = '';
+        let auSent = 0, poSent = 0, batches = 0, stopAu = false, stopPo = false, stallAu = false, stallPo = false, stopped = '', err = '', purged = [];
         const step = () => {
           if (batches >= maxBatches) { stopped = 'batch-cap'; return Promise.resolve(); }
           // 一趟腿推完了就不再读它：否则每批都白读一条空查询，全量推时那是 500 次空转
@@ -1227,10 +1322,25 @@
               }
               stopAu = aus.length < LIB_MAX;
               stopPo = pos.length < LIB_MAX;
-              const o = {}; o[libWmKey(c.env, c)] = { au: wm.au, po: wm.po };
-              // 两条腿都读到不满一页 ⇒ 本趟已经推完，别再白读一轮（stopped 用 'done' 表达「追平了」）
-              if (stopAu && stopPo) { stopped = 'done'; return null; }
-              return setKey(o).then(() => step());
+              // v0.12.0：服务端明确确认落库才清本机待发行；清理先于水位落盘（反了会留下「本地有、再也不推」的死行）
+              const confirmed = d.persisted === true;
+              const jobs = [
+                confirmed && Number(d.auWriteFail || 0) === 0 && wm.au > before.au ? ['lib_users', wm.au] : null,
+                confirmed && Number(d.poWriteFail || 0) === 0 && wm.po > before.po ? ['lib_posts', wm.po] : null,
+              ].filter(Boolean);
+              return purgeAcked(jobs).then((pg) => {
+                if (!pg.purgeOk) {
+                  wm.au = before.au; wm.po = before.po;   // 清理没成 ⇒ 水位回退，这批下趟整批重推
+                  err = '本机待发台账清理失败，水位没推进：' + pg.purged.filter((x) => !x.ok).map((x) => x.err).join('；');
+                  stopped = 'error';
+                  return null;
+                }
+                purged = purged.concat(pg.purged);
+                // 两条腿都读到不满一页 ⇒ 本趟已经推完，别再白读一轮（stopped 用 'done' 表达「追平了」）
+                if (stopAu && stopPo) { stopped = 'done'; return null; }
+                const o = {}; o[libWmKey(c.env, c)] = { au: wm.au, po: wm.po };
+                return setKey(o).then(() => step());
+              });
             });
           });
         };
@@ -1238,7 +1348,8 @@
           const o = {}; o[libWmKey(c.env, c)] = { au: wm.au, po: wm.po };
           return setKey(o).then(() => {
             const out = { ok: !err, err: err, env: c.env, base: c.base, auSent: auSent, poSent: poSent,
-              batches: batches, wm: { au: wm.au, po: wm.po }, done: stopped === 'done', capped: stopped === 'batch-cap' };
+              batches: batches, wm: { au: wm.au, po: wm.po }, done: stopped === 'done', capped: stopped === 'batch-cap',
+              purged: purged };
             // 这一趟撞了批数顶但还有得推：过 1 秒接着跑（SW 若被杀，30 分钟闹钟还会兜住）
             if (stopped === 'batch-cap') scheduleLibSync(1000);
             return finish(out);
@@ -1286,7 +1397,7 @@
       const deviceId = a[1];
       if (!deviceId) return finish({ ok: false, err: 'deviceId 没生成出来（存储写失败？）' });
       return blockWm(c.env, c).then((wm0) => {
-        let wm = wm0.bl, sent = 0, batches = 0, stopped = '', err = '';
+        let wm = wm0.bl, sent = 0, batches = 0, stopped = '', err = '', purged = [];
         const step = () => {
           if (batches >= maxBatches) { stopped = 'batch-cap'; return Promise.resolve(); }
           return dbq({ q: 'block_marks', after: wm, limit: BLK_MAX }).then((r) => {
@@ -1319,9 +1430,21 @@
                 stopped = 'stalled';
                 return null;
               }
-              if (rows.length < BLK_MAX) { stopped = 'done'; return null; }
-              const o = {}; o[blockWmKey(c.env, c)] = { bl: wm };
-              return setKey(o).then(() => step());
+              // v0.12.0：确认落库才清本机；清理在前、水位在后
+              const confirmed = d.persisted === true && Number(d.blWriteFail || 0) === 0;
+              const jobs = confirmed && wm > before ? [['block_marks', wm]] : [];
+              return purgeAcked(jobs).then((pg) => {
+                if (!pg.purgeOk) {
+                  wm = before;
+                  err = '本机待发台账清理失败，水位没推进：' + pg.purged.filter((x) => !x.ok).map((x) => x.err).join('；');
+                  stopped = 'error';
+                  return null;
+                }
+                purged = purged.concat(pg.purged);
+                if (rows.length < BLK_MAX) { stopped = 'done'; return null; }
+                const o = {}; o[blockWmKey(c.env, c)] = { bl: wm };
+                return setKey(o).then(() => step());
+              });
             });
           });
         };
@@ -1329,7 +1452,7 @@
           const o = {}; o[blockWmKey(c.env, c)] = { bl: wm };
           return setKey(o).then(() => {
             const out = { ok: !err, err: err, env: c.env, base: c.base, sent: sent, batches: batches,
-              wm: wm, done: stopped === 'done', capped: stopped === 'batch-cap' };
+              wm: wm, done: stopped === 'done', capped: stopped === 'batch-cap', purged: purged };
             if (stopped === 'batch-cap') scheduleBlockSync(1000);
             return finish(out);
           });

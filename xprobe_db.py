@@ -1134,6 +1134,40 @@ def query(name: str, limit: int = 20, day: str = None, author: str = None,
             return {"ok": False, "err": "%s: %s" % (type(e).__name__, e), "query": name}
 
 
+# v0.12.0 云端模式「推完即清」：只有服务端回过 ack 的行才允许从本机台账删除。
+# 白名单把「查询名 -> 真实表」写死，调用方给不了 SQL、给不了表名；upto 是服务端 ack 的 id 水位。
+PURGE_TABLES = {
+    "bench_marks_ac": "benchmarks",
+    "bench_marks_po": "bench_posts",
+    "lib_users": "store_users",
+    "lib_posts": "store_posts",
+    "block_marks": "blocks",
+}
+
+
+def purge(name: str, upto: int = 0) -> dict:
+    """删掉本机台账里 id <= upto 的行。只允许上云那五条腿用，且 upto 必须来自服务端 ack。
+    坏形状一律拒绝、不默认 0（默认 0 等于啥也不删，但也不该假装成功）；删失败整体回滚。"""
+    if name not in PURGE_TABLES:
+        return {"ok": False, "err": "未知清理目标 %r" % name, "allow": sorted(PURGE_TABLES)}
+    try:
+        n = _after_int(upto)
+    except ValueError as e:
+        return {"ok": False, "err": str(e), "purge": name}
+    with _LOCK:
+        if not is_available():
+            return {"ok": False, "err": _DB["err"] or "库未打开", "purge": name}
+        try:
+            conn = _DB["conn"]
+            cur = conn.execute("DELETE FROM %s WHERE id <= ?" % PURGE_TABLES[name], (n,))
+            conn.commit()
+            return {"ok": True, "purge": name, "table": PURGE_TABLES[name],
+                    "upto": n, "deleted": cur.rowcount, "db": _stats_locked()}
+        except Exception as e:
+            conn.rollback()
+            return {"ok": False, "err": "%s: %s" % (type(e).__name__, e), "purge": name}
+
+
 def backfill(logs_dir, log_fn=None, summarize=None) -> dict:
     """空库时从已经落盘的 ndjson 补档；已有数据也不影响（幂等），所以 --backfill 可以反复跑。
     summarize 由调用方把 log-sink 的 _summ 传进来 —— 补档的行也要有摘要，否则 /db?q=recent 里

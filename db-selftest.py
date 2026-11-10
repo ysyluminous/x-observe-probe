@@ -1729,6 +1729,34 @@ def leg_fs(tmp):
             p.kill()
 
 
+def leg_purge(xdb, tmp):
+    print("\n[A5] v0.12.0 落库确认制：本机台账只按服务端 ack 水位清（白名单 + 坏形状拒绝）")
+    if not xdb.open_db(tmp / "purge-xprobe.db"):
+        ck("清理自检临时库打不开", False, xdb._DB["err"])
+        return
+    conn = xdb._DB["conn"]
+    for i, hh in enumerate(("pa", "pb", "pc"), 1):
+        conn.execute("INSERT INTO blocks(key, at, day, handle, state) VALUES(?, ?, ?, ?, 1)",
+                     ("k%d" % i, "2026-11-10T1%d:00:00.000" % i, "2026-11-10", hh))
+    conn.execute("INSERT INTO benchmarks(at, day, handle, state) VALUES(?, ?, ?, 1)",
+                 ("2026-11-10T10:00:00.000", "2026-11-10", "keepme"))
+    conn.commit()
+    ok1 = xdb.purge("block_marks", 2)
+    ck("只删 id<=ack 的行：ack=2 ⇒ 删 2 行、第三行与另一张表原样在",
+       ok1.get("ok") is True and ok1.get("deleted") == 2 and
+       [r["handle"] for r in xdb.query("block_marks", 50)["rows"]] == ["pc"] and
+       conn.execute("SELECT COUNT(*) FROM benchmarks").fetchone()[0] == 1, ok1)
+    bad = xdb.purge("blocks; DROP TABLE blocks", 999)
+    ck("外部传来的表名一律拒绝（whitelist 之外一个字都不执行）",
+       bad.get("ok") is False and conn.execute("SELECT COUNT(*) FROM blocks").fetchone()[0] == 1, bad)
+    bad2 = xdb.purge("block_marks", "abc")
+    ck("坏水位当场拒绝、不退成 0（悄悄全删/悄悄不删都是骗人）",
+       bad2.get("ok") is False and "after" in bad2.get("err", ""), bad2)
+    zero = xdb.purge("block_marks", 0)
+    ck("ack=0 是合法水位：0 行删除、回包说清 0（不是失败）",
+       zero.get("ok") is True and zero.get("deleted") == 0, zero)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--logs", default="", help="可选：真机 logs 目录，带上就多跑一遍档案重放")
@@ -1749,6 +1777,7 @@ def main() -> int:
         leg_sync(xdb, tmp)
         leg_lib(xdb, tmp)
         leg_block(xdb, tmp)
+        leg_purge(xdb, tmp)
         leg_http(xdb, tmp, a.logs)
         leg_native(tmp)
         leg_fs(tmp)

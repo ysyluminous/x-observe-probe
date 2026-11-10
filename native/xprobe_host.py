@@ -386,6 +386,21 @@ def _handle(sink, req: dict, logf) -> tuple:
                             day if isinstance(day, str) and day else None,
                             author if isinstance(author, str) and author else None,
                             hours, win, after)
+    # v0.12.0 云端模式「推完即清」：只有服务端 ack 过的 id 才允许从本机台账删除。
+    # 与 /fs 一样是把「删了回不来」的入口压到最小：名字白名单 + upto 非负整数，SQL 永远不进协议。
+    if t == "dbpurge":
+        name = str(req.get("q") or "")
+        try:
+            upto = int(req.get("upto"))
+        except (TypeError, ValueError):
+            return 400, {"ok": False, "err": "upto 要 >=0 的整数（服务端 ack 水位）"}
+        if upto < 0:
+            return 400, {"ok": False, "err": "upto 要 >=0 的整数（服务端 ack 水位）"}
+        try:
+            code, out = sink.dbpurge_body(name, upto)
+        except Exception as e:
+            return 500, {"ok": False, "err": "清理异常: %s" % str(e)[:160]}
+        return code, out
     if t == "fs":
         op = str(req.get("op") or "sizes")
         if op == "sizes":

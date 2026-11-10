@@ -233,6 +233,17 @@ def db_body(name: str, limit: int, day: str = None, author: str = None,
     return (200 if out.get("ok") else 400), out
 
 
+def dbpurge_body(name: str, upto: int) -> tuple:
+    """云端模式「推完即清」：只按服务端 ack 水位删本机台账。白名单与形状校验都在 xprobe_db.purge。"""
+    if xdb is None:
+        return 500, {"ok": False, "err": "xprobe_db.py 没能导入"}
+    try:
+        out = xdb.purge(name, upto)
+    except Exception as e:
+        out = {"ok": False, "err": "purge 异常: %s" % e}
+    return (200 if out.get("ok") else 400), out
+
+
 def _db_dump(name: str, meta: dict) -> None:
     if xdb is None:
         return
@@ -799,7 +810,8 @@ class H(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         is_dump = path.startswith("/dump")
         is_fs = path.startswith("/fs")
-        if not (is_dump or is_fs or path.startswith("/log")):
+        is_purge = path.startswith("/dbpurge")
+        if not (is_dump or is_fs or is_purge or path.startswith("/log")):
             self._send(404, {"ok": False, "err": "unknown path"})
             return
         limit = MAX_DUMP_BODY if is_dump else MAX_BODY
@@ -813,6 +825,27 @@ class H(BaseHTTPRequestHandler):
             self._send(413 if length > limit else 400, {"ok": False, "err": "bad length %s" % length})
             return
         body = self.rfile.read(length)
+        if is_purge:
+            # 与 /fs 同一档：body 只认 q / upto 两个键，最多几百字节；
+            # upto 必须是服务端 ack 的非负整数，坏形状当场 400，不悄无声息地「删个 0 行算成功」。
+            try:
+                req = json.loads(body.decode("utf-8"))
+            except Exception as e:
+                self._send(400, {"ok": False, "err": "body 不是 JSON: %s" % str(e)[:60]})
+                return
+            req = req if isinstance(req, dict) else {}
+            name = str(req.get("q") or "")
+            try:
+                upto = int(req.get("upto"))
+            except (TypeError, ValueError):
+                self._send(400, {"ok": False, "err": "upto 要 >=0 的整数（服务端 ack 水位）"})
+                return
+            if upto < 0:
+                self._send(400, {"ok": False, "err": "upto 要 >=0 的整数（服务端 ack 水位）"})
+                return
+            code, out = dbpurge_body(name, upto)
+            self._send(code, out)
+            return
         if is_fs:
             # 清理是这台机器上唯一「删了就回不来」的入口：body 只认 op/target/keep/dry 四个键，
             # 且缺省 dry=true —— 参数丢了、JSON 半截了，最坏结果是「只量没删」，不是「删多了」。

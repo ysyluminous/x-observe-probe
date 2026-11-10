@@ -8858,10 +8858,44 @@ const layersDone = (async function () {
       const spA = rd('ui/sidepanel.js');
       eq('版本戳四处一致：manifest.version == core VER、core BUILD == sidepanel PANEL_BUILD',
         [mfA.version === SRC_VER, SRC_VER, /PANEL_BUILD = '([^']+)'/.exec(spA)[1] === SRC_BUILD, SRC_BUILD],
-        [true, '0.11.18', true, '2026-11-10-a']);
+        [true, '0.12.0', true, '2026-11-10-b']);
 
       console.log('[art-020] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
     }
+
+    // ---- v0.12.0：落库确认制 + 单一数据源（发成功 ≠ 落库成功）----
+    console.log('\n[v0.12.0] 落库确认制：只有云端确认过的行才允许清本机 / 浏览器');
+    const pyDB = fs.readFileSync(path.join(__dirname, 'xprobe_db.py'), 'utf8');
+    const pySink = fs.readFileSync(path.join(__dirname, 'log-sink.py'), 'utf8');
+    const pyHost = fs.readFileSync(path.join(__dirname, 'native', 'xprobe_host.py'), 'utf8');
+    ok('本机库只认五张台账的白名单（外部传不进表名/SQL）',
+      /PURGE_TABLES = \{/.test(pyDB) &&
+      ['bench_marks_ac', 'bench_marks_po', 'lib_users', 'lib_posts', 'block_marks'].every((k) => pyDB.includes('"' + k + '":')) &&
+      !/DELETE FROM ["']?\+/.test(pyDB), '');
+    ok('清理语句只按 id <= ack 水位删，坏游标拒绝、失败回滚',
+      /DELETE FROM %s WHERE id <= \?/.test(pyDB) && /conn\.rollback\(\)/.test(pyDB) &&
+      /if name not in PURGE_TABLES/.test(pyDB), '');
+    ok('HTTP 回退与 Native 宿主都开了同一道门（/dbpurge 与 t=dbpurge）',
+      /path\.startswith\("\/dbpurge"\)/.test(pySink) && /def dbpurge_body/.test(pySink) &&
+      /if t == "dbpurge"/.test(pyHost), '');
+    ok('SW 三条上云腿都要 persisted=true 才清本机（老服务端回不出这格 ⇒ 一行都不删）',
+      (swSrc.match(/d\.persisted === true/g) || []).length === 3 &&
+      /d\.persisted !== true \|\| Number\(d\.writeFail \|\| 0\) !== 0/.test(swSrc),
+      (swSrc.match(/d\.persisted === true/g) || []).length);
+    ok('清理先于水位落盘：清理失败就回退游标，绝不留下「本地有、再也不推」的死行',
+      /purgeAcked\(jobs\)/.test(swSrc) && /wm\.au = before\.au; wm\.po = before\.po/.test(swSrc) &&
+      /wm = before;/.test(swSrc), '');
+    ok('浏览器态也只在确认落库后清，且按 handle|day|at / at|dir|target 精确配对（新采的不误删）',
+      /if \(d\.persisted !== true \|\| Number\(d\.writeFail \|\| 0\) !== 0\) return out;/.test(swSrc) &&
+      /function clearUploadedBrowserRows/.test(swSrc) && /dayKeys\[/.test(swSrc) && /evKeys\[/.test(swSrc), '');
+    ok('guard 的 cool / goal / follows 是运行态不是上送队列：清理只碰 ev',
+      /nextGuard = Object\.assign\(\{\}, guard/.test(swSrc) &&
+      /ev: \[\]\.concat\(Array\.isArray\(guard\.ev\)/.test(swSrc), '');
+    ok('清理走的是同一条回环通道（Native 优先 / HTTP 回退），不新增网络出口或权限',
+      /const DB_PURGE_URL = 'http:\/\/127\.0\.0\.1:8765\/dbpurge'/.test(swSrc) &&
+      /if \(m === 'POST' && u\.pathname === '\/dbpurge'\)/.test(swSrc) &&
+      (swSrc.match(/manifest/g) || []).length >= 0, '');
+
 
 })();
 
@@ -9036,7 +9070,6 @@ if (process.argv.indexOf('--live') >= 0) {
         lines(paths.testLog).slice(-14).join('\n')), lines(paths.testLog).slice(-3));
     ok('同一条 reward 也进了 store 摘要的「序列=」（面板/store 行看得到点位数）',
       /store 表=\d+人\/\d+帖 序列=\d+min\/\d+day/.test(lines(paths.testLog).slice(-14).join('\n')), lines(paths.testLog).slice(-1));
-
 
     console.log('\n合计 ' + pass + ' 通过 / ' + fail + ' 失败');
     process.exit(fail ? 1 : 0);

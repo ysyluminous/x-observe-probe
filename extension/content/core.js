@@ -7,9 +7,9 @@
 // 页面里我只留一个节点（右下角浮标），详面板搬到扩展自己的 Side Panel ⇒ 注入节点归零是这次换壳的真收益。
 (function () {
   'use strict';
-  const VER = '0.11.18';
+  const VER = '0.12.0';
 
-  const BUILD = '2026-11-10-a';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
+  const BUILD = '2026-11-10-b';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
   const SINK = 'http://127.0.0.1:8765';
   const STORE_KEY = 'ysy.xprobe.v1';
   // 浏览器这边只留「运行态」，整页原文的去处是本机 xprobe.db（sink-9）。

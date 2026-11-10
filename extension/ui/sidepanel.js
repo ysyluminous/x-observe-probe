@@ -10,7 +10,7 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   // 面板自己的版本戳（不是 core 报的那个）：⟳ 之后若这颗还是旧值，说明这个 Side Panel 文档
   // 没跟着换（Chrome 会让已打开的面板继续跑旧 JS），先关掉重开面板再谈别的。
-  const PANEL_BUILD = '2026-11-10-a';
+  const PANEL_BUILD = '2026-11-10-b';
   const out = { err: '' };
   let st = null, lastStateAt = 0, view = 'home', rndDirty = false, ownDirty = false, whoSel = '';
   // state 回包可能乱序（广场那条 30 秒轮询 + 关注事件触发的 READ 会同时在飞）：
