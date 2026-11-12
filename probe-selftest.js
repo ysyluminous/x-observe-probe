@@ -125,6 +125,15 @@ class El {
     this.kids.push(c); c.parentNode = this; return c;
   }
   append(...cs) { cs.forEach((c) => this.appendChild(c)); }
+  // v0.12.2：关系标签改兄弟插入（参考插件「不是兄弟」的 host+position 安置），桩补真 DOM 的四个方位。
+  // afterend/beforebegin 要先算参照兄弟再插：c 自己就是参照时原地不动（insertBefore 的摘除会吞掉参照位）。
+  insertAdjacentElement(pos, c) {
+    const p = this.parentNode;
+    if (!p || !(p instanceof El)) return c;
+    if (pos === 'beforebegin') { if (this.previousElementSibling === c) return c; p.insertBefore(c, this); return c; }
+    if (pos === 'afterend') { const ref = this.nextElementSibling; if (ref === c) return c; p.insertBefore(c, ref || null); return c; }
+    this.append(c); return c;
+  }
   remove() {
     if (this._id) delete IDS[this._id];
     const p = this.parentNode;
@@ -630,8 +639,8 @@ console.log('\n[5] 面板（数据通道 + 格式化层；页面里已经没有�
   const dlines = V.debugLines(res.state);
   const dt = dlines.map((m) => (m.k === 'row' ? m.label + ' ' + m.value : m.k === 'fold' ? m.title + ' ' + m.text : m.text)).join('\n');
   ok('Side Panel 经命令通道拿到 state', res.ok && res.state.last.tweets.length === 3, res.ok);
-  eq('渲染不往页面加节点：本模块自己造的就是右下角一根玻璃柱（方案 A 钮排：柱容器 + 内嵌样式 + 探针点 + 分隔线 + 关/榜/回/杆/帖/稿/观 + 各自的 label span；v0.11.4 那第七颗「回帖」造出来就常驻，闸关着时只 display:none，摘了反而每翻一次闸要重建一次）',
-    [created.length, created.filter((e) => /^ysy-xprobe/.test(e.id || '')).length], [20, 9]);
+  eq('渲染不往页面加节点：本模块自己造的就是右下角一根玻璃柱（方案 A 钮排：柱容器 + 内嵌样式 + 探针点 + 分隔线 + 探/关/榜/回/杆/帖/稿/观 + 各自的 label span；v0.11.4 那第七颗「回帖」造出来就常驻，闸关着时只 display:none，摘了反而每翻一次闸要重建一次；art-021 起多折叠钮「探」，分隔线挂了 id）',
+    [created.length, created.filter((e) => /^ysy-xprobe/.test(e.id || '')).length], [22, 11]);
   ok('首页有今日四列单卡（四列标签顺序固定；v0.6.11 起打开主页就自动落今天那行 ⇒ 关注/粉丝有数；v0.8.1 起帖子总数也自动采，只剩曝光还是话术）',
     !!hero && /^\d{4}-\d{2}-\d{2}$/.test(hero.day) &&
     hero.items.map((i) => i.label).join('/') === '曝光/关注/粉丝/帖子' &&
@@ -2227,6 +2236,86 @@ console.log('\n[8h3] 今日关注进度（v0.6.9 F4 第 2 版）：基线=「正
   ['ysy.xprobe.guard', 'ysy.xprobe.users', 'ysy.xprobe.posts', 'ysy.xprobe.randMax'].forEach((k) => delete store[k]);
 }
 
+console.log('\n[8h5] art-021 浮标钮排：R3 尺寸数组补齐 / R1 默认折叠 / R4 总闸 / R2 拖动');
+{
+  delete store['ysy.xprobe.guard'];
+  const xbtn5 = (t) => h('button', { 'aria-label': t }, [T(t)]);
+  const fx5 = h('div', {}, [xbtn5('聊天'), xbtn5('举报'), xbtn5('通知'), xbtn5('小'), xbtn5('左上')]);
+  const sb = run(fx5, '/home', 'https://x.com/home');
+  const xp = sb.__xprobe;
+  const geo5 = (n, left, top, w, hh) => { n.__geo = { left: left, top: top, width: w, height: hh }; };
+  const cols5 = fx5.children;
+  geo5(cols5[0], 1386, 700, 40, 40); geo5(cols5[1], 1386, 650, 40, 40); geo5(cols5[2], 1386, 600, 40, 40);
+  geo5(cols5[3], 1400, 750, 24, 24); geo5(cols5[4], 20, 700, 40, 40);
+  // 可见性账：十件东西（九颗钮 + 一条分隔线）里 display 没被写成 none 的
+  const vis5 = () => ['ysy-xprobe-ext-foldbtn', 'ysy-xprobe-ext-fbtn', 'ysy-xprobe-ext-cbtn', 'ysy-xprobe-ext-hotbtn',
+    'ysy-xprobe-ext-rbtn', 'ysy-xprobe-ext-bbtn', 'ysy-xprobe-ext-bpbtn', 'ysy-xprobe-ext-aibtn',
+    'ysy-xprobe-ext-fab', 'ysy-xprobe-ext-sep'].filter((i) => IDS[i] && IDS[i].style.display !== 'none');
+
+  // R3：尺寸数组一颗不漏
+  const need5 = ['ysy-xprobe-ext-fbtn', 'ysy-xprobe-ext-cbtn', 'ysy-xprobe-ext-hotbtn', 'ysy-xprobe-ext-rbtn',
+    'ysy-xprobe-ext-bbtn', 'ysy-xprobe-ext-bpbtn', 'ysy-xprobe-ext-aibtn', 'ysy-xprobe-ext-foldbtn', 'ysy-xprobe-ext-fab'];
+  ok('R3：九颗 id 全在 fabApplySize 的尺寸数组里（v0.11.18「热」/v0.11.4「稿」曾漏，以后新增钮必须同进）',
+    need5.every((i) => xp.FAB_SIZE_IDS.indexOf(i) >= 0) && xp.FAB_SIZE_IDS.length === 9, xp.FAB_SIZE_IDS);
+  xp.fabBtn();   // 建排（默认折叠起笔；这一趟先量后画，量到 40）
+  eq('R3：量到 40 ⇒ 「热」「稿」「探」也等大（这三颗曾拿 FAB_STY 初始 34 起笔不吃实测）',
+    [IDS['ysy-xprobe-ext-hotbtn'].style.width, IDS['ysy-xprobe-ext-aibtn'].style.width, IDS['ysy-xprobe-ext-foldbtn'].style.height],
+    ['40px', '40px', '40px']);
+
+  // R1：默认折叠成「探」一颗
+  eq('R1：默认折叠 ⇒ 柱里只露「探」一颗（圆点不是钮；分隔线跟着藏）', vis5(), ['ysy-xprobe-ext-foldbtn']);
+  xp.fabFoldToggle();
+  eq('R1：点「探」展开 ⇒ 业务钮全露（AI 闸默认关，「稿」仍按闸藏着；分隔线跟着回来）',
+    [vis5().length, vis5().indexOf('ysy-xprobe-ext-foldbtn') >= 0], [9, true]);
+  xp.fabFoldToggle();
+  xp.fabBtn(); xp.fabBtn();   // 折叠翻回后节拍再过两趟：影子没翻面就不许再动
+  eq('R1：再点收起 ⇒ 只剩「探」，节拍路过不重写', vis5(), ['ysy-xprobe-ext-foldbtn']);
+
+  // R2：拖动（沙箱桩 listeners 直调，不派合成事件）
+  eq('R2：默认落点是右缘老位置', [IDS['ysy-xprobe-ext-bar'].style.right, IDS['ysy-xprobe-ext-bar'].style.bottom], ['14px', '210px']);
+  const bar5 = IDS['ysy-xprobe-ext-bar'];
+  bar5.listeners.pointerdown[0]({ clientX: 100, clientY: 100, preventDefault() {} });
+  const mv5 = sb.window.listeners.pointermove[sb.window.listeners.pointermove.length - 1];
+  mv5({ clientX: 300, clientY: 80 });   // dx=200 ⇒ right 14-200 钳到 0；dy=-20 ⇒ bottom 210+20=230
+  eq('R2：拖动中坐标实时钳在视口内（沙箱 1440×900）', [bar5.style.right, bar5.style.bottom], ['0px', '230px']);
+  const up5 = sb.window.listeners.pointerup[sb.window.listeners.pointerup.length - 1];
+  up5();
+  ok('R2：松手落库（fabpos 存档就是钳完的落点）', JSON.stringify(store['ysy.xprobe.fabpos']) === '{"right":0,"bottom":230}', store['ysy.xprobe.fabpos']);
+  eq('R2：拖完松手那一下不是点（抑制灯亮，mk 包的壳会吞掉这一个 click）', xp.__fabDrag().suppress, true);
+  const foldClicks5 = IDS['ysy-xprobe-ext-foldbtn'].listeners.click;
+  if (foldClicks5[0]) foldClicks5[0]({});   // 那一下 click 打在「探」上：被壳吞掉，不触发折叠翻转
+  eq('R2：抑制灯用完即清、且被吞的 click 没有触发「探」的动作',
+    [xp.__fabDrag().suppress, xp.fabFoldGet()], [false, true]);
+  eq('R2：fabClampPos 两头都钳（左上出界归 0，右下出界归视口减自身）',
+    (() => { const a = xp.fabClampPos(-99, -99, 40, 40); const b = xp.fabClampPos(9999, 9999, 40, 40);
+      return [a.right, a.bottom, b.right, b.bottom]; })(), [0, 0, 1400, 860]);
+  bar5.remove();   // 模拟换页/刷新后的重建
+  xp.fabBtn();
+  eq('R2：重建后恢复拖后位置（刷新还在原位）',
+    [IDS['ysy-xprobe-ext-bar'].style.right, IDS['ysy-xprobe-ext-bar'].style.bottom], ['0px', '230px']);
+  const rp5 = xp.fabPosReset();
+  eq('R2：位置复位 ⇒ 回右缘默认位、存档清掉',
+    [IDS['ysy-xprobe-ext-bar'].style.right, IDS['ysy-xprobe-ext-bar'].style.bottom, rp5.ok, store['ysy.xprobe.fabpos']],
+    ['14px', '210px', true, null]);
+
+  // R4：总闸（关=整棵摘掉、节拍不复活；重开=当场重建且折叠态/位置沿用）
+  const r4a = xp.setFabRail(false);
+  ok('R4：总闸关 ⇒ 柱子整棵不在 DOM（不是 display:none 占位）', !IDS['ysy-xprobe-ext-bar'] && r4a.ok && r4a.fabrail === false);
+  xp.fabBtn(); xp.fabBtn();
+  ok('R4：闸关节拍路过也不复活', !IDS['ysy-xprobe-ext-bar']);
+  const r4b = xp.setFabRail(true);
+  ok('R4：重开 ⇒ 当场重建、折叠态沿用（只露「探」）、位置沿用（已复位=默认位）',
+    !!IDS['ysy-xprobe-ext-bar'] && vis5().length === 1 && r4b.fabrail === true
+    && IDS['ysy-xprobe-ext-bar'].style.right === '14px', [vis5(), IDS['ysy-xprobe-ext-bar'].style.right]);
+  eq('R4：state 带着闸的影子，面板照它画开关', xp.stateForPanel().fabrail.on, true);
+  eq('R4：命令通道 setFabRail(false) 同帧生效（面板那颗钮走的就是它）',
+    (() => { const r = sb.__toCore({ t: 'setFabRail', v: false });
+      return [r.ok, r.result.fabrail, !!IDS['ysy-xprobe-ext-bar']]; })(), [true, false, false]);
+  sb.__toCore({ t: 'setFabRail', v: true });
+  ['ysy.xprobe.guard', 'ysy.xprobe.users', 'ysy.xprobe.posts', 'ysy.xprobe.randMax',
+   'ysy.xprobe.fabrail', 'ysy.xprobe.fabfold', 'ysy.xprobe.fabpos'].forEach((k) => delete store[k]);
+}
+
 console.log('\n[8i] v0.6.5：chrome.storage 只留运行态（整页原文归本机库）+ 面板要知道占用');
 {
   ['ysy.xprobe.v1', 'ysy.xprobe.users', 'ysy.xprobe.posts'].forEach((k) => delete store[k]);
@@ -3448,8 +3537,8 @@ console.log('\n[11] 关注守卫：只读观察 / 基线不虚计 / 滚动窗口
   xp.doCollect({ force: true });   // 到限状态要经一次 render 才落到浮标与 state 上
   const gst = xp.stateForPanel();
   ok('到限信息进 state（腾出位置那句话由 view 层拼，见 [12]）', gst.guard.over24 === true && gst.guard.free24 > 0, [gst.guard.f24, gst.guard.free24]);
-  eq('state 里带着 sink/guard/dump/counts/last/missing/notes/upsert/host/peer/own/series/storage/runsMeta（v0.6.8 加 debug/rndMax，v0.6.9 加 trim，v0.8.7 加 perf，v0.8.9 加 badge），面板不再读页面', Object.keys(gst).sort().join(','),
-    'badge,build,counts,debug,dump,guard,host,hotbadge,href,last,missing,notes,own,peer,perf,rndMax,runsMeta,series,sink,storage,tab,trim,upsert,ver');
+  eq('state 里带着 sink/guard/dump/counts/last/missing/notes/upsert/host/peer/own/series/storage/runsMeta（v0.6.8 加 debug/rndMax，v0.6.9 加 trim，v0.8.7 加 perf，v0.8.9 加 badge，art-021 加 fabrail），面板不再读页面', Object.keys(gst).sort().join(','),
+    'badge,build,counts,debug,dump,fabrail,guard,host,hotbadge,href,last,missing,notes,own,peer,perf,rndMax,runsMeta,series,sink,storage,tab,trim,upsert,ver');
   // 队列账本与表顶状态必须真的在 state 里：面板那两行只是读它们，读不到就是「看不见」的老问题
   eq('state.sink.q 是队列账本（长度/落盘条数/丢弃数/断线毫秒/两个上限）',
     ['len,bytes,count,dropped,adopted,persisted,lastAt,err,down,max,byteCap,boot', typeof gst.sink.q.len === 'number' && !!gst.sink.q.boot],
@@ -3468,9 +3557,10 @@ console.log('\n[11] 关注守卫：只读观察 / 基线不虚计 / 滚动窗口
 
   const fab = IDS['ysy-xprobe-ext-fab'];
   const injected = sb.__created;
-  eq('页面里我只造一根玻璃柱：柱容器 + 关/榜/回/杆/帖/稿/观七颗（v0.9.5 柱内多三个不带 id 的常驻件：内嵌样式/探针点/分隔线，两张窗口仍只在点开时存在；v0.11.4 第七颗「回帖」造出来就藏在柱里，本机模型那颗闸开着才 display:flex）',
-    injected.filter((e) => e.id).map((e) => e.id), ['ysy-xprobe-ext-bar', 'ysy-xprobe-ext-fbtn', 'ysy-xprobe-ext-cbtn',
-      'ysy-xprobe-ext-hotbtn', 'ysy-xprobe-ext-rbtn', 'ysy-xprobe-ext-bbtn', 'ysy-xprobe-ext-bpbtn', 'ysy-xprobe-ext-aibtn', 'ysy-xprobe-ext-fab']);
+  eq('页面里我只造一根玻璃柱：柱容器 + 探/关/榜/回/杆/帖/稿/观八颗（v0.9.5 柱内多三个常驻件：内嵌样式/探针点/分隔线，两张窗口仍只在点开时存在；v0.11.4 第七颗「回帖」造出来就藏在柱里，本机模型那颗闸开着才 display:flex；art-021 起多折叠钮「探」，分隔线挂 id FABSEP_ID）',
+    injected.filter((e) => e.id).map((e) => e.id), ['ysy-xprobe-ext-bar', 'ysy-xprobe-ext-foldbtn', 'ysy-xprobe-ext-fbtn', 'ysy-xprobe-ext-cbtn',
+      'ysy-xprobe-ext-hotbtn', 'ysy-xprobe-ext-rbtn', 'ysy-xprobe-ext-bbtn', 'ysy-xprobe-ext-bpbtn', 'ysy-xprobe-ext-aibtn',
+      'ysy-xprobe-ext-sep', 'ysy-xprobe-ext-fab']);
   ok('第七颗「稿」（AI 回帖）在闸关着时是藏着的（display:none，不是一个字都不发的那种「没做」）：默认关 = 页面上找不到它',
     !!IDS['ysy-xprobe-ext-aibtn'] && IDS['ysy-xprobe-ext-aibtn'].style.display === 'none'
       && IDS['ysy-xprobe-ext-aibtn'].textContent === '稿', IDS['ysy-xprobe-ext-aibtn'] && IDS['ysy-xprobe-ext-aibtn'].style.display);
@@ -5628,14 +5718,14 @@ const layersDone = (async function () {
       && /const RATIO_GREEN = 95;/.test(s) && /const RATIO_YELLOW = 85;/.test(s)
       && /rt = null; need = needOf\(null\);/.test(s)
       && /const needOf = \(x\) => BADGE_FULL_W \+ \(x \? BADGE_GAP_PX \+ ratioBudget\(x\) : 0\);/.test(s)
-      && /relChipRow\(anchor, h, rel0\)/.test(s)
+      && /relChipRow\(nameEl, h, rel0\)/.test(s)
       && /badgePick\(anchor, refEl, need\)/.test(s);
     ok('三层接线齐：名片按 href 收那两个数并落台账 + 档位常量 + 「挤不下就先保钮」写在代码里（比例一级退让）+ 落点预算真的传进 badgePick + 关系标签改住名字行',
       pin18(core18), core18.slice(core18.indexOf('const needOf'), core18.indexOf('const needOf') + 200));
     ok('正向对照：把 need 从 badgePick 那两枪里全抠掉（= 标签宽度不进落点预算，挂好再塞就会压住右边的字）⇒ 判据当场变红',
       !pin18(core18.replace(/badgePick\(anchor, refEl, need\)/g, 'badgePick(anchor, refEl)')), '');
     ok('正向对照：把 relChipRow 的画笔抠掉（关系标签不画进名字行）⇒ 判据当场变红（这条针脚咬住「标签在名字行」这个位置）',
-      !pin18(core18.replace(/relChipRow\(anchor, h, rel0\)/g, 'null')), '');
+      !pin18(core18.replace(/relChipRow\(nameEl, h, rel0\)/g, 'null')), '');
     ok('面板那行有「标签/缺数/旧」三个数、html 讲清了「没数就一颗都不编」（RL-11：抓不到不许静默，也别说得好像一定有）',
       /标签' \+ \(p\.badgeRatio \|\| 0\) \+ '\/缺数' \+ \(p\.badgeRatioNo \|\| 0\) \+ '\/旧' \+ \(p\.badgeRatioOld \|\| 0\)/.test(rd('ui/view.js'))
       && /没数就一个都不编/.test(html18) && /__ratioInfo: ratioInfo/.test(core18), '');
@@ -6962,10 +7052,10 @@ const layersDone = (async function () {
     });
     const visible = (r) => r.hint.length + r.desc.length;
     const sum = (arr) => arr.reduce((a, x) => a + x, 0);
-    ok('setBox 解析得到（这一段的账不能对着空气算）：33 行（v0.10.0 多了「云端接口」、v0.10.6 多了「抓取档案」两行、v0.10.7 多了「同步进度」、v0.11.0 多了「重试间隔」、v0.11.4 多了「本机模型」那一节的四行、v0.11.18 多了「热点徽标」一行）、每行都有 secLab',
-      rows25.length === 33 && rows25.every((r) => r.lab.length > 0), rows25.length);
-    ok('常驻可见的说明压到 800 字以内（v0.9.7 实测 2717 字 ⇒ 一屏读不完、控件找不到；v0.11.0 多一行「重试间隔」抬到 760；v0.11.4 多一节「本机模型」四行抬到 800，每行仍有上限）',
-      sum(rows25.map(visible)) <= 800, sum(rows25.map(visible)));
+    ok('setBox 解析得到（这一段的账不能对着空气算）：35 行（v0.10.0 多了「云端接口」、v0.10.6 多了「抓取档案」两行、v0.10.7 多了「同步进度」、v0.11.0 多了「重试间隔」、v0.11.4 多了「本机模型」那一节的四行、v0.11.18 多了「热点徽标」一行、art-021 多了「显示钮排」「位置复位」两行）、每行都有 secLab',
+      rows25.length === 35 && rows25.every((r) => r.lab.length > 0), rows25.length);
+    ok('常驻可见的说明压到 850 字以内（v0.9.7 实测 2717 字 ⇒ 一屏读不完、控件找不到；v0.11.0 多一行「重试间隔」抬到 760；v0.11.4 多一节「本机模型」四行抬到 800，每行仍有上限；art-021 多「显示钮排/位置复位」两行抬到 850）',
+      sum(rows25.map(visible)) <= 850, sum(rows25.map(visible)));
     ok('每一行常驻那一句都不超过 60 字（超了就是又写回了一整段）',
       rows25.every((r) => visible(r) <= 60), rows25.filter((r) => visible(r) > 60).map((r) => r.lab + '=' + visible(r)));
     ok('搬家不是删：折叠全文合计仍有 3000+ 字，且每行的 .secFold 都待在它自己那一行里',
@@ -8047,11 +8137,38 @@ const layersDone = (async function () {
       eq('四行各一颗徽标；标签档位 = 互关/他单向/我单向/（只有半条证据的那行）一颗都没有',
         [Object.keys(bd34).length, lab34(bd34.both), lab34(bd34.tb1), lab34(bd34.libonly), lab34(bd34.witness)],
         [4, '互关', '他单向', '我单向', null]);
-      eq('v0.11.10 位置：标签长在**名字锚里面**、紧跟显示名文字后面（参考插件同款；v0.11.9 插在外层 grid 容器里被当成新格子——另起一行还被拉伸），颜色按档位分、「我单向」是虚线框，且标签的字不混进台账名（data-n）',
-        [chipOf(bd34.tb1).parentNode.getAttribute('href'), chipOf(bd34.tb1).parentNode.parentNode.getAttribute('data-testid'),
+      eq('v0.12.2 位置（100% 复刻「不是兄弟」的 host+position）：标签是名字锚**后面的兄弟**（绝不长进锚里面——'
+        + '详情页那颗锚是纵排 flex 的整块身份区，塞进去就被 stretch 成拉满暗条，v0.11.10 拉长条的根因），'
+        + '紧跟名字、在时间那格前面；颜色按档位分、「我单向」是虚线框，且标签的字不混进台账名（data-n）',
+        [chipOf(bd34.tb1).previousElementSibling.getAttribute('href'),
+          chipOf(bd34.tb1).parentNode.getAttribute('data-testid'),
+          (chipOf(bd34.tb1).nextElementSibling.textContent || '').indexOf('1小时') >= 0,
           chipOf(bd34.tb1).style.color, chipOf(bd34.libonly).style.border, chipOf(bd34.both).style.border,
           (bd34.tb1.getAttribute('data-n') || '').indexOf('互关') < 0],
-        ['/tb1', 'User-Name', '#13231b', '1px dashed color-mix(in srgb, #f1b84b 55%, #13231b)', '1px solid color-mix(in srgb, #a8e89a 55%, #13231b)', true]);
+        ['/tb1', 'User-Name', true, '#13231b', '1px dashed color-mix(in srgb, #f1b84b 55%, #13231b)', '1px solid color-mix(in srgb, #a8e89a 55%, #13231b)', true]);
+      ok('v0.12.2 防抖筋骨照参考插件 .xro-badge 抄齐：flex:none（不挤人也不被人挤）、pointer-events:none'
+        + '（指针穿透，光标/悬停全按没有这颗算——「鼠标一过头标就乱」的断根）、纯展示件一个事件都没挂',
+        chipOf(bd34.tb1).style.flex === 'none' && chipOf(bd34.tb1).style.pointerEvents === 'none'
+        && !chipOf(bd34.tb1).listeners.click && !chipOf(bd34.tb1).listeners.mousedown
+        && chipOf(bd34.tb1).fire('click') === undefined, chipOf(bd34.tb1).style);
+      ok('v0.12.2 安置禁区与零写（relPlace/relAtSpot 单测）：带 time 的盒子不当宿主（po 拒收 ⇒ 退到名字锚 afterend）、'
+        + '头像容器与含图锚被跳过、位置没站错才搬——第二趟同 spot 一个字都不动',
+        (() => {
+          const X = s34.__xprobe;
+          const box1 = h('div', {}, [h('a', { href: '/aa' }, [T('甲'), T(' @aa')]), h('a', { href: '/bb' }, [T(' @bb')])]);
+          // bb 的名字锚在 aa 后面：Xe 应跳过禁区分认不出 —— 这里只验三条硬判据
+          const r1 = X.relPlace(box1, 'aa');                       // 无 time ⇒ po 要两样齐：无 span ⇒ 退 Xe ⇒ aa 锚 afterend
+          const box2 = h('div', {}, [h('a', { href: '/aa' }, [h('time', {}, [T('1小时')])])]);
+          const r2 = X.relPlace(box2, 'aa');                       // 唯一的锚带 time ⇒ 全禁区 ⇒ 一处都不给（null）
+          const box2b = h('div', {}, [T('光杆一行，没锚没时间')]);
+          const r2b = X.relPlace(box2b, 'aa');                     // 无锚无 time 无头像 ⇒ 兜底宿主=自己 beforeend
+          const box3 = h('div', {}, [h('a', { href: '/aa' }, [h('img', {}, [])]), h('a', { href: '/aa' }, [T(' @aa')])]);
+          const r3 = X.relPlace(box3, 'aa');                       // 第一颗锚含 img（头像禁区）⇒ 跳过，认第二颗
+          const spot = X.relPlace(box1, 'aa');
+          const fake = h('span', {}, ['x']);
+          return [r1.host.getAttribute('href'), r1.pos, r2 === null, r2b.host === box2b, r2b.pos,
+            r3.host === box3.children[1], X.relAtSpot(fake, spot.host, 'afterend')];
+        })(), ['/aa', 'afterend', true, true, 'beforeend', true, false]);
       eq('徽标里只剩那颗钮了（这四行没有比例数；关系标签那一格从盒子里搬走了）',
         [bd34.tb1.children.map((c) => String(c.tagName || '').toLowerCase()).join(','),
           bd34.tb1.children.some((c) => String(c.getAttribute('class') || '').indexOf(RC34) >= 0)],
@@ -8103,6 +8220,46 @@ const layersDone = (async function () {
         ['我单向', '1px dashed color-mix(in srgb, #f1b84b 55%, #13231b)', 'me~', true]);
       btn34.setAttribute('data-testid', '84021-follow');
       btn34.setAttribute('aria-label', '回关 @tb1');
+
+      // ---- v0.12.2 名单行内「N 天未回关」：我单向的行尾一枚小天数标，悬停写起算日期与口径 ----
+      // 台账实情（写进断言）：本机没有 per-handle 的关注动作账（guard.follows 只是限流时间戳），
+      // 起算用 seenAs.following（本机关注列表里看到 TA 的那天），没有退 firstSeenAt（手机关注的兜底）。
+      {
+        const ISO34b = ISO34;
+        const D34 = Math.floor((Date.now() - Date.parse(ISO34b)) / 86400000);   // 不咬死真钟：期望天数现算
+        store['ysy.xprobe.users'] = {
+          nfb1: { handle: 'nfb1', relation: 'following', seenAs: { following: ISO34b }, updatedAt: 5 },
+          // TA 那侧有「关注你」的账（粉丝列表里见过）⇒ 互关向，不挂天数标
+          nfb2: { handle: 'nfb2', relation: 'following', seenAs: { followers: ISO34b }, updatedAt: 5 },
+          // 手机关注的：电脑没记关注列表的账，起算退 firstSeenAt（3.5 天前 ⇒ 3 天）
+          nfb3: { handle: 'nfb3', relation: 'following', firstSeenAt: Date.now() - 3.5 * 86400000, updatedAt: 5 },
+          witness: JSON.parse(JSON.stringify(led34.witness)),   // 凑 followersListSeen()=true 的那半条腿
+        };
+        const rows34d = h('div', { lang: 'zh' }, [
+          tweetCell('nfb1', '8501', ISO34b, '一帖'),
+          tweetCell('nfb2', '8502', ISO34b, '二帖'),
+          tweetCell('nfb3', '8503', ISO34b, '三帖'),
+        ]);
+        const s34d = run(rows34d, '/home', 'https://x.com/home');
+        s34d.__xprobe.flistBtn().fire('click');
+        const fl34d = () => IDS['ysy-xprobe-ext-flist'];
+        const tab34d = fl34d().querySelectorAll('button').find((x) => /^已关\(/.test(x.textContent));
+        tab34d.fire('click');
+        const row34d = (hh) => fl34d().children.find((x) => String(x.title || '').indexOf('@' + hh) === 0);
+        const mark34d = (hh) => {
+          const r = row34d(hh);
+          return r && r.children.find((c) => /天未回|今天关注/.test(String(c.textContent)));
+        };
+        const m1 = mark34d('nfb1'), m3 = mark34d('nfb3');
+        eq('我单向的行挂天数标：起算=本机关注列表里看到 TA 的那天（' + D34 + ' 天前），互关向与待回行都不挂',
+          [m1 && m1.textContent, /起算：2026-11-01/.test(m1 && m1.title), /关注列表/.test(m1 && m1.title),
+            !!mark34d('nfb2'), !!m3],
+          [D34 + '天未回', true, true, false, true]);
+        ok('手机关注的兜底口径写进悬停：起算=firstSeenAt（第一次见到 TA 的那天），天数照算（3.5 天 ⇒ 3 天）',
+          m3.textContent === '3天未回' && /第一次见到/.test(m3.title) && /手机关注/.test(m3.title)
+          && /推断：进过粉丝列表没看到 TA/.test(m3.title), m3.title);
+        store['ysy.xprobe.users'] = JSON.parse(JSON.stringify(led34));   // 还账：后面的桥腿测试接着用 led34
+      }
 
       // ---- v0.11.7 桥腿端到端：home 时间线没有关系钮，X 把 following/followed_by 随时间线带回了页面
       // React 树里 —— isolated world 读不到 ⇒ 主世界 bridge.js（[36] 单测）读出来 postMessage 回来。
@@ -8243,7 +8400,7 @@ const layersDone = (async function () {
     console.log('\n[35] v0.11.4 功能二：AI 回帖这一腿（闸关=一个字都不发 · 出口只有原生宿主 · 草稿不替你发）');
     {
       // ---- A. 传输红线（静态）：地址与 Key 只许出现在后两层，页面那一层一个字都摸不到 ----
-      const aiLeg = src.slice(src.indexOf('const AIBTN_ID'), src.indexOf('function fabBtn()'));
+      const aiLeg = src.slice(src.indexOf('const AICARD_ID'), src.indexOf('function fabBtn()'));
       const swSend = swSrc.slice(swSrc.indexOf('function modelSend('), swSrc.indexOf('function modelDraft('));
       const swDraft = swSrc.slice(swSrc.indexOf('function modelDraft(msg)'), swSrc.indexOf('function aiGateShout('));
       ok('页面这一腿只有 SW 一条通道：片里有 dbAsk({ t: \'modelDraft\' })，却没有 fetch / XHR / GM_xmlhttpRequest，'
@@ -8383,6 +8540,8 @@ const layersDone = (async function () {
         h('div', { 'data-testid': 'tweetText' }, [T(txt)]),
       ])]);
       const root35 = art35(TXT35);
+      // art-021 R1：柱子默认折叠，这一段专测第七颗的闸显隐 —— 先把折叠存档拨到「展开」，测完在段尾清掉
+      store['ysy.xprobe.fabfold'] = false;
       const s35 = run(root35, PATH35, 'https://x.com' + PATH35);
       eq('boot 那一刻 SW 还没回话（沙盒的 sendMessage 只记账不回包）⇒ 影子是 null 而不是 false：'
         + '「没读到」与「关着」画成同一个安全默认值，但账上分得清（RL-11 不许拿没读到冒充关着）',
@@ -8549,7 +8708,7 @@ const layersDone = (async function () {
         IDS[AC].children[1].textContent, '@demo_own · 帖子 9004 · 正文 7 字');
 
       // ---- D. 变异对照：这几行不在，上面的判据就得红 ----
-      const sA = src.replace("      aiEl.style.display = aiGateOn() ? 'flex' : 'none';", '      // 抠掉这一行');
+      const sA = src.replace("      aiEl.style.display = (aiGateOn() && !fabFoldGet()) ? 'flex' : 'none';", '      // 抠掉这一行');
       const sB = src.replace('    if (t.why) { aiNote = t.why;', '    if (false) { aiNote = t.why;');
       const sC = src.replace("      if (aiOpen) { aiOpen = false; aiBusy = false; }\n      renderAi();",
         '      if (aiOpen) { aiOpen = false; aiBusy = false; }');
@@ -8581,6 +8740,7 @@ const layersDone = (async function () {
         [mD.ok, w35m.__nativeQ.length], [true, 1]);
 
       delete store['ysy.xprobe.posts'];
+      delete store['ysy.xprobe.fabfold'];   // art-021：段首为测第七颗显隐把折叠拨到「展开」，走时还回去
     }
 
     console.log('\n[36] v0.11.8/v0.11.11 关系读数桥（主世界只读信使 bridge.js）：三条收割源（fetch/XHR 只读旁听 + Redux store + fiber 上下爬）、'
@@ -8858,9 +9018,134 @@ const layersDone = (async function () {
       const spA = rd('ui/sidepanel.js');
       eq('版本戳四处一致：manifest.version == core VER、core BUILD == sidepanel PANEL_BUILD',
         [mfA.version === SRC_VER, SRC_VER, /PANEL_BUILD = '([^']+)'/.exec(spA)[1] === SRC_BUILD, SRC_BUILD],
-        [true, '0.12.0', true, '2026-11-10-b']);
+        [true, '0.12.3', true, '2026-11-11-c']);
 
       console.log('[art-020] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
+    }
+
+    // ================= art-023 帖子详情页页头「流量徽标 + 悬停详情卡」：新增断言单独计数 =================
+    {
+      const passBase = pass;
+      console.log('\n[art-023] 详情页页头流量徽标（页头定位 / 悬停详情卡 / 延迟收卡 / 总闸联动 / 没变不重写 / skip 兜底）');
+      const TID23 = '2120357195456053702';
+      const iso23 = (hrs) => new Date(Date.now() - hrs * 3600000).toISOString();
+      function statusPage23(opts) {
+        const o = opts || {};
+        const artKids = [];
+        if (!o.noViews) artKids.push(h('a', { href: '/ZX2023225/status/' + TID23 + '/analytics', 'aria-label': '5,168 次观看' }, [T('v')]));
+        artKids.push(h('time', { datetime: iso23(1) }, [T('t')]));
+        artKids.push(h('button', { 'data-testid': 'like', 'aria-label': '144 likes' }, [T('♥')]));
+        artKids.push(h('button', { 'data-testid': 'retweet', 'aria-label': '0 reposts' }, [T('↻')]));
+        artKids.push(h('button', { 'data-testid': 'reply', 'aria-label': '232 replies' }, [T('↩')]));
+        artKids.push(h('div', { role: 'group', 'aria-label': '232 replies、0 reposts、144 likes、5 bookmarks、5,168 views' }, [T('g')]));
+        artKids.push(h('div', { 'data-testid': 'User-Name' }, [h('a', { href: '/ZX2023225' }, [T('之书')])]));
+        artKids.push(h('div', { 'data-testid': 'tweetText' }, [T('正文')]));
+        const root23 = h('div', {}, [
+          h('header', {}, [
+            h('div', { 'data-testid': 'app-bar-back' }, [T('←')]),
+            h('h2', {}, [T('帖子')]),
+          ]),
+          h('article', { 'data-testid': 'tweet' }, artKids),
+        ]);
+        const path23 = o.home ? '/home' : '/ZX2023225/status/' + TID23;
+        return run(root23, path23, 'https://x.com' + path23);
+      }
+
+      // 验收 1：总闸默认关，关着时详情页一颗都不挂（与推文内流速徽标同一道闸，RL-16）
+      delete store['ysy.xprobe.hotbadge'];
+      const sg1 = statusPage23();
+      const H1 = sg1.__xprobe;
+      eq('总闸默认关', H1.hotBadgeGet(), false);
+      eq('关着时 hotDetStep 一颗不挂、页头无芯、弹卡不存在',
+        [H1.hotDetStep(), sg1.document.querySelectorAll('.ysy-xprobe-hotdet').length, !!sg1.document.getElementById(H1.HOTDETPOP_ID)],
+        [0, 0, false]);
+
+      // 验收 2：开闸 → 页头 h2 后面缝进徽标（兄弟插入、不动 X 的布局），数值对得上截图口径
+      H1.setHotBadge(true);
+      const chip23 = sg1.document.querySelector('.' + H1.HOTDET_CLS);
+      ok('页头出芯：插在 h2 之后（previousElementSibling = h2，宿主是页头那一层）',
+        !!chip23 && chip23.previousElementSibling && chip23.previousElementSibling.tagName === 'H2'
+        && chip23.parentElement.tagName === 'HEADER',
+        [!!chip23, chip23 && chip23.previousElementSibling && chip23.previousElementSibling.tagName,
+         chip23 && chip23.parentElement && chip23.parentElement.tagName]);
+      const d23 = H1.hotDetData();
+      eq('徽标值 = 解析读数：1 小时 5168 次 → 🚀 5.2k/h（trending 橙）',
+        [chip23.textContent, chip23.getAttribute('data-tid'), d23.tid, d23.views, d23.likes, d23.rt, d23.replies, d23.bm, d23.tier],
+        ['🚀 5.2k/h', TID23, TID23, 5168, 144, 0, 232, 5, 'trending']);
+      ok('芯样式带悬停语义（pointerEvents:auto 收悬停、flex:none 不被拉伸）+ 红线（自己不滚动）',
+        chip23.style.pointerEvents === 'auto' && chip23.style.flex === 'none' && !chip23.__scrolls,
+        [chip23.style.pointerEvents, chip23.style.flex, chip23.__scrolls]);
+
+      // 验收 3：悬停出详情卡 —— 八行、数值与截图一致、发布时间 Y:M:D H:M:S
+      chip23.__geo = { left: 900, top: 30, width: 70, height: 22 };
+      chip23.fire('mouseenter');
+      const pop23 = sg1.document.getElementById(H1.HOTDETPOP_ID);
+      ok('悬停出卡：挂在 documentElement 下的 fixed 浮层、display:block', !!pop23 && pop23.parentNode === sg1.document.documentElement && pop23.style.display === 'block',
+        [!!pop23, pop23 && pop23.style.display]);
+      eq('卡片定位锚在徽标右下（right = 视口宽 1440 − (900+70) = 470px，top = 30+22+6 = 58px）',
+        [pop23.style.right, pop23.style.top], ['470px', '58px']);
+      eq('卡片十块：标题 + 八行 + 口径脚注', pop23.children.length, 10);
+      const pt23 = pop23.textContent;
+      ok('八行数值对得上截图（浏览量 5.2k / 点赞 144 / 转发 0 / 回复 232 / 收藏 5 / 流速 5.2k/h / 爆炸指数 /100 / 发布时间）',
+        pt23.indexOf('浏览量') >= 0 && /浏览量\s*5\.2k/.test(pt23)
+        && /点赞\s*144/.test(pt23) && /转发\s*0/.test(pt23) && /回复\s*232/.test(pt23) && /收藏\s*5(?!\.)/.test(pt23)
+        && /流速\s*5\.2k\/h/.test(pt23) && /爆炸指数\s*\d+\/100/.test(pt23)
+        && new RegExp('发布时间\\s*' + H1.hotDetDate(d23.createdMs).replace(/[:]/g, '[:[:]')).test(pt23),
+        [pt23.slice(0, 200), H1.hotDetDate(d23.createdMs)]);
+
+      // 验收 4：延迟收卡 —— 离开 200ms 才收、中途进卡会取消；真收掉时整棵摘净
+      chip23.fire('mouseleave');
+      ok('离开先不收（200ms 宽限，定时器挂账）', !!pop23.parentNode && H1.__hotDet().hideT !== 0, [!!pop23.parentNode, H1.__hotDet().hideT]);
+      pop23.fire('mouseenter');
+      eq('挪进卡片取消收卡', [H1.__hotDet().hideT, !!pop23.parentNode], [0, true]);
+      chip23.fire('mouseleave');
+      const hideT23 = sg1.__timers[sg1.__timers.length - 1];
+      hideT23.fn();
+      eq('宽限到期整棵摘净（卡不在 DOM、账清零）',
+        [!!pop23.parentNode, H1.__hotDet().pop, H1.__hotDet().hideT, H1.__hotDet().key], [false, false, 0, '']);
+
+      // 验收 5：节拍纪律 —— 没变不写（0 次createElement）；数值变了原地改字、不换节点
+      const made23 = sg1.__created.length;
+      eq('没变再跑一轮：返回 0、一个节点都不造', [H1.hotDetStep(), sg1.__created.length - made23], [0, 0]);
+      sg1.document.querySelector('a[href$="/analytics"]').setAttribute('aria-label', '6,168 次观看');
+      const chipRef23 = sg1.document.querySelector('.' + H1.HOTDET_CLS);
+      eq('数值变了原地改字（🚀 6.2k/h）、还是原来那颗节点',
+        [H1.hotDetStep(), sg1.document.querySelector('.' + H1.HOTDET_CLS) === chipRef23, chipRef23.textContent],
+        [1, true, '🚀 6.2k/h']);
+
+      // 验收 6：skip 兜底 —— 没有浏览量就诚实挂 🌱 —、弹卡八行全是 —（不编数）
+      const sg2 = statusPage23({ noViews: true });
+      const H2 = sg2.__xprobe;
+      H2.setHotBadge(true);
+      const chip2 = sg2.document.querySelector('.' + H2.HOTDET_CLS);
+      eq('缺浏览量：hotDetData 如实报 skip、芯挂 🌱 —',
+        [H2.hotDetData().skip, chip2.textContent], ['missing', '🌱 —']);
+      eq('弹卡八行全是 —（不编数）',
+        H2.hotDetRows(H2.hotDetData()).every((r) => r[1] === '—'), true);
+
+      // 验收 7：闸门联动 —— setHotBadge(false) 芯与卡当场清零；非详情页一颗不出
+      chip2.fire('mouseenter');
+      H2.setHotBadge(false);
+      eq('关闸当场摘净：芯清零、弹卡收起',
+        [sg2.document.querySelectorAll('.' + H2.HOTDET_CLS + ', [data-xprobe="hotdet"]').length, H2.__hotDet().pop], [0, false]);
+      delete store['ysy.xprobe.hotbadge'];
+      const sg3 = statusPage23({ home: true });
+      const H3 = sg3.__xprobe;
+      H3.setHotBadge(true);
+      eq('首页不出页头芯（benchPostRow 的 tabName 闸）',
+        [sg3.document.querySelectorAll('.ysy-xprobe-hotdet').length, H3.hotDetStep()], [0, 0]);
+      H3.setHotBadge(false);
+
+      // 验收 8：接线钉死 —— hotBadgeAuto/setHotBadge 都带上 hotDetStep/hotDetSweep（源码字面）
+      const csrc23 = rd('content/core.js');
+      ok('hotBadgeAuto 与 setHotBadge 都联动页头芯（同一道总闸）',
+        /hotBadgeRender\(\); hotDetStep\(\)/.test(csrc23) && /hotBadgeSweep\(\); hotDetSweep\(\)/.test(csrc23),
+        [/hotBadgeRender\(\); hotDetStep\(\)/.test(csrc23), /hotBadgeSweep\(\); hotDetSweep\(\)/.test(csrc23)]);
+      ok('红线：详情卡不派事件、不抢滚动、监听只挂自家节点（源码无 dispatchEvent/preventDefault/stopPropagation 调用）',
+        !/dispatchEvent\(|preventDefault\(|stopPropagation\(/.test(csrc23), true);
+      delete store[H1.HOT_BADGE_KEY];
+
+      console.log('[art-023] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
     }
 
     // ---- v0.12.0：落库确认制 + 单一数据源（发成功 ≠ 落库成功）----

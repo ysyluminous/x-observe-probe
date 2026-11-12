@@ -131,6 +131,14 @@
       <div class="secTxt"><div class="secLab">本页热点流速徽标</div><div class="secHint">关掉＝推文行里不注入任何流速徽标；默认关</div><div class="secFold">art-020 本页热度榜在推文行内标的档位+流速徽标（🔥/🚀/🌱），默认关；打开后才按当前页每小时浏览量给入榜推文挂一颗，关掉当场摘干净、页面零痕迹。它与「页面内拉黑徽标」是两道独立的闸，互不牵连；只读 DOM、只在本机算，不请求 X、不点、不滚。榜单本身点右缘「热」那颗钮展开。</div></div>
       <button id="bHotBadge" type="button">热点徽标: 关</button>
     </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">显示钮排</div><div class="secHint">右缘玻璃柱的总闸；关掉＝当场摘干净、页面零痕迹（默认开）</div><div class="secFold">页面右缘那根玻璃柱（关/榜/热/回/杆/帖/稿/观 + 折叠钮「探」）的总闸（art-021 R4）。三颗钮的从属关系：显示钮排（这里，总闸）→「探」折叠/展开（页面上点，art-021 R1，默认只露「探」一颗）→ 位置复位（下一行，art-021 R2）。关掉＝整根柱子连同里面所有钮当场从 DOM 摘掉，不是 display:none 占位——与「页面内拉黑徽标」同一约定；core 每一趟节拍都现读这道闸，设置里拨一下所有标签页同频、重开当场重建。</div></div>
+      <button id="bFabRail" type="button">显示钮排: 开</button>
+    </div>
+    <div class="secRow">
+      <div class="secTxt"><div class="secLab">位置复位</div><div class="secHint">拖丢了的钮排一键回右缘默认位</div><div class="secFold">钮排可以按住整根柱子拖到任意位置（art-021 R2：拖过 4px 才算拖，松手落库、刷新还在原位，且永远被钳在视口内——窗口缩小、换屏都不会跑到屏幕外；拖完松手那一下不会误触发钮上的 click，默认位是 right 14px / bottom 210px，v0.8.12 起那个老位置）。这颗钮清掉拖动存档，立刻回到右缘默认位。它只管位置，不动「显示钮排」总闸与折叠态。</div></div>
+      <button id="bFabPos" type="button">位置复位</button>
+    </div>
   </div>
   <div class="sec">
     <div class="secT">本机文件与清理</div>
