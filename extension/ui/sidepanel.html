@@ -11,13 +11,14 @@
   <select id="tabPick" title="选择要读取哪个 x.com 标签页"><option value="">（活动标签页）</option></select>
 </header>
 
+<!-- v0.12.13（art-032）侧边栏只留高频精简三视图（用户裁定：最常用的最简洁的放右侧），
+     页签吸底；我的/广场/预测/诊断整体搬进全页工作台 ui/dashboard.html（bWorkbench 打开）。
+     数据源二选一（本地库 / Go 接口）也在工作台头部设置。 -->
 <div id="viewPick">
   <button id="vHome" type="button" class="on">首页</button>
-  <button id="vMine" type="button" title="我自己的历史：分钟线 / 曝光日线 / 三四列日线 + 可编辑日点表">我的</button>
-  <button id="vPlaza" type="button" title="广场：直接读本机库 xprobe.db —— 账号榜 + 帖子榜（曝光/互动/增速）+ 最该关注/取关建议；选中某个人还能看/改他那一口日点表">广场</button>
-  <button id="vFc" type="button" title="预测：粉丝数折线 + 到 5,000 / 10,000 的两条外推（A 全期拟合 / B 近3天节奏）。吃的是日点表的粉丝列，分钟点/补录/回填一有新点，900ms 回读时自动重算">预测</button>
-  <button id="vDebug" type="button" class="hide" title="诊断视图：读数质量、存储占用、命中率、漏抓清单与原文折叠。先在「设置」里打开诊断模式">诊断</button>
+  <button id="vFollow" type="button" title="未回关：按本机库记下的最早一次主动关注时间排序，筛出还没回关我的人；三态默认未知，只有手动刷到该账号才更新">未回关</button>
   <button id="vSet" type="button">设置</button>
+  <button id="bWorkbench" type="button" title="打开全页工作台（新标签页）：我的/广场/预测/诊断、复杂图表与两张榜、数据源二选一都在那里">工作台 ↗</button>
 </div>
 
 <div id="coolBar" class="cool ok hide" title="60 秒冷却：一次关注完成后至少等 60 秒再做下一个（只警告，不拦点击）"></div>
@@ -29,20 +30,10 @@
   <button id="bExport" type="button">导出 JSON</button>
 </div>
 
-<!-- 我的 / 广场共用这一条工具栏（「看谁」只在广场出现：我的页视线恒在自己身上）；历史四列的补/改/删都在页面里的日线网格（impsNode） -->
+<!-- 未回关页工具条：抓一个点 + 显示全部（v0.12.13 起「看谁/回填/重读库」搬进工作台广场/我的） -->
 <div id="barTrend" class="bar hide">
-  <select id="whoPick" class="hide" title="选谁就在下面看谁、编辑谁（默认不选 = 只看排名）"><option value="">（看谁）</option></select>
   <button id="bSample" type="button" title="在奖励页=读一次 90 天曝光数并落自己的日点；在任何人的主页=把这一屏的关注/粉丝落在页主名下那一行（只有自己的号还会打分钟点）">抓一个点</button>
-  <button id="bRestore" type="button" title="把 xprobe.db 里「每人每天一行」的日点灌回浏览器存储（日线图和日点表读的是浏览器运行态；backfill_days.py 直接写库的那些日子靠这个才看得见）">从本机库回填</button>
-  <button id="bDbRefresh" type="button" class="hide" title="重新读本机库 xprobe.db 的两张榜（进广场会自动读；宿主/sink 刚起来时点它）">重读库</button>
-</div>
-
-<!-- 诊断：查表 + 排障两键 -->
-<div id="barDebug" class="bar hide">
-  <input id="q" type="text" placeholder="查本地表：handle / 显示名 / 推文 ID / 正文关键词">
-  <button id="bQuery" type="button">查表</button>
-  <button id="bPing" type="button" title="测一次本机 sink 是否活着（首页通道灯红的先来这儿）">测活</button>
-  <button id="bStats" type="button">刷新计数</button>
+  <button id="bFollowAll" type="button" class="hide" title="把已回关的人也列出来（默认只列没回关的）">显示全部</button>
 </div>
 
 <!-- 设置（v0.9.8 起重排）：一行只有三样东西 —— 名字、一行短提示、控件。
@@ -112,7 +103,7 @@
   <div class="sec">
     <div class="secT">开关</div>
     <div class="secRow">
-      <div class="secTxt"><div class="secLab">诊断模式</div><div class="secHint">打开后顶部多「诊断」视图（排障用，平时不用开）</div><div class="secFold">打开后顶部多「诊断」视图；切进去会落一份 kind=debug 进本机日志</div></div>
+      <div class="secTxt"><div class="secLab">诊断模式</div><div class="secHint">打开后工作台多「诊断」页签（读数质量/查表/漏抓清单；排障用，平时不用开）</div><div class="secFold">打开后工作台（dashboard.html）多「诊断」页签；切进去会落一份 kind=debug 进本机日志。诊断页 v0.12.13 起搬进工作台：侧边栏不再有「诊断」视图</div></div>
       <button id="bDebug" type="button">诊断模式: 关</button>
     </div>
     <div class="secRow">
@@ -138,6 +129,19 @@
     <div class="secRow">
       <div class="secTxt"><div class="secLab">位置复位</div><div class="secHint">拖丢了的钮排一键回右缘默认位</div><div class="secFold">钮排可以按住整根柱子拖到任意位置（art-021 R2：拖过 4px 才算拖，松手落库、刷新还在原位，且永远被钳在视口内——窗口缩小、换屏都不会跑到屏幕外；拖完松手那一下不会误触发钮上的 click，默认位是 right 14px / bottom 210px，v0.8.12 起那个老位置）。这颗钮清掉拖动存档，立刻回到右缘默认位。它只管位置，不动「显示钮排」总闸与折叠态。</div></div>
       <button id="bFabPos" type="button">位置复位</button>
+    </div>
+    <div class="secRow" style="align-items:flex-start">
+      <div class="secTxt"><div class="secLab">显示哪些钮</div><div class="secHint">不勾＝那颗钮当场从右缘摘掉、不占位；勾上＝恢复。折叠钮「探」常驻不可关（关了就展不开）</div><div class="secFold">v0.12.9：右缘那排八颗业务钮可以各自单独关掉。取消勾选那一颗，它当场从柱子摘掉、连空位都不留（不是变灰、不是占位），其余钮的顺序和位置不受影响；重新勾上就长回原处。设置存在浏览器本地（ysy.xprobe.fabvis），拨一下所有标签页同频，重开页面仍在。折叠钮「探」不在列表里——它是展开整排的唯一入口，关掉它就再也展不开了。「稿」（AI 回帖草稿）还要同时满足本机模型那一节的总闸才会露面，两道条件是「与」的关系。这里只管页面右缘那排钮的显隐，不碰拉黑徽标、热度徽标那两道独立闸门。</div></div>
+    </div>
+    <div class="fabVisGrid" id="fabVisGrid">
+      <label class="fabVisItem"><input type="checkbox" id="fvFbtn" data-fab="ysy-xprobe-ext-fbtn" checked><span>☰ 关·名单</span></label>
+      <label class="fabVisItem"><input type="checkbox" id="fvCbtn" data-fab="ysy-xprobe-ext-cbtn" checked><span>▤ 榜·曝光</span></label>
+      <label class="fabVisItem"><input type="checkbox" id="fvHotbtn" data-fab="ysy-xprobe-ext-hotbtn" checked><span>✦ 热·热点</span></label>
+      <label class="fabVisItem"><input type="checkbox" id="fvRbtn" data-fab="ysy-xprobe-ext-rbtn" checked><span>↩ 回·待回关</span></label>
+      <label class="fabVisItem"><input type="checkbox" id="fvBbtn" data-fab="ysy-xprobe-ext-bbtn" checked><span>◎ 杆·标杆人</span></label>
+      <label class="fabVisItem"><input type="checkbox" id="fvBpbtn" data-fab="ysy-xprobe-ext-bpbtn" checked><span>▦ 帖·标杆帖</span></label>
+      <label class="fabVisItem"><input type="checkbox" id="fvAibtn" data-fab="ysy-xprobe-ext-aibtn" checked><span>✎ 稿·AI草稿</span></label>
+      <label class="fabVisItem"><input type="checkbox" id="fvFab" data-fab="ysy-xprobe-ext-fab" checked><span>◉ 观·面板灯</span></label>
     </div>
   </div>
   <div class="sec">
@@ -244,6 +248,7 @@
 <main id="report"></main>
 <footer id="foot"></footer>
 
+<script src="kit.js"></script>
 <script src="view.js"></script>
 <script src="sidepanel.js"></script>
 </body>

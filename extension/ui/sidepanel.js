@@ -6,46 +6,22 @@
 
   const $ = (id) => document.getElementById(id);
   const V = globalThis.XPROBE_VIEW;
-  // SVG 的名字空间是个 XML 标识符，不是要请求的地址（面板只对 chrome.runtime 与本机下载说话）
-  const SVG_NS = 'http://www.w3.org/2000/svg';
   // 面板自己的版本戳（不是 core 报的那个）：⟳ 之后若这颗还是旧值，说明这个 Side Panel 文档
   // 没跟着换（Chrome 会让已打开的面板继续跑旧 JS），先关掉重开面板再谈别的。
-  const PANEL_BUILD = '2026-11-11-c';
+  const PANEL_BUILD = '2026-11-13-e';
   const out = { err: '' };
-  let st = null, lastStateAt = 0, view = 'home', rndDirty = false, ownDirty = false, whoSel = '';
+  // v0.12.14（art-033）：渲染层（tick/各节点/摘要框家族/榜排序分页状态）与发送通道抽进 ui/kit.js，
+  // 面板与工作台共用一份实现。页面差异（页面名、重画、取数、state）由 create(deps) 注入；
+  // 面板不读广场两张榜，one 传 null（作者模态框在面板侧自然不可达）。
+  const K = globalThis.XPROBE_KIT.create({ pageLabel: '面板', render: render, fetchDb: fetchDb, one: null, getSt: () => st });
+  const send = K.send;
+  let st = null, lastStateAt = 0, view = 'home', rndDirty = false, ownDirty = false;
   // state 回包可能乱序（广场那条 30 秒轮询 + 关注事件触发的 READ 会同时在飞）：
   // 只认发出时序号更大的那一份，免得一份「关注之前算出来的」旧 state 把刚翻红的横幅又盖回绿。
   let stateSeq = 0, stateDone = 0;
   // 共享台账（ysy.xprobe.guard）变更后的回读节流句柄
   let guardReload = 0;
-  // 本机库的两份 rows（广场用）。不在 900ms 状态轮询里读：每次 sendNativeMessage 都会新起一个宿主进程，
-  // 只在进广场时读一次，之后 30 秒刷一次（点「重读库」可立刻再读）。
-  let db = null, dbBusy = false, dbAt = 0;
 
-  function send(msg) {
-    return new Promise((res) => {
-      try {
-        chrome.runtime.sendMessage(msg, (reply) => {
-          const e = chrome.runtime.lastError;
-          if (e) {
-            const m = String(e.message || e);
-            // 插件 ⟳ 重载之后，重载前打开的这个 Side Panel 是孤儿：内存里 state 还是旧的（看着一切正常），
-            // 但 runtime 已经换了，每条消息都是 "Receiving end does not exist"——用户看起来就是「点了没反应」。
-            // 必须点名怎么救：关掉重开面板，而不是让他们以为按钮坏了。
-            const orphan = /Receiving end does not exist|Extension context invalidated|message port closed/i.test(m);
-            res({ ok: false, err: orphan
-              ? '插件刚重载过（⟳），这个面板是旧副本：把它关掉重开（或重新点扩展图标）就好——旧面板上看着有数的都是重载前的内存'
-              : String(m).slice(0, 120) });
-          } else res(reply || { ok: false, err: '扩展没响应（service worker 刚睡？再点一次）' });
-        });
-      } catch (e) {
-        const m = String((e && e.message) || e).slice(0, 120);
-        res({ ok: false, err: /Receiving end does not exist|Extension context invalidated/i.test(m)
-          ? '插件刚重载过（⟳），这个面板是旧副本：把它关掉重开（或重新点扩展图标）就好——旧面板上看着有数的都是重载前的内存'
-          : m });
-      }
-    });
-  }
 
   // 命令带上当前选中的标签页；没选就让 SW 去找活动页
   function cmd(t, v) {
@@ -62,411 +38,7 @@
     });
   }
 
-  function tick(msg) {
-    if (!msg) return lineNode({ k: 'line', text: '(空)' });
-    if (msg.k === 'fold') return foldNode(msg);
-    if (msg.k === 'row') return rowNode(msg);
-    if (msg.k === 'chart') return chartNode(msg);
-    if (msg.k === 'imps') return impsNode(msg);
-    if (msg.k === 'rank') return rankNode(msg);
-    if (msg.k === 'grid') return gridNode(msg);
-    if (msg.k === 'hero') return heroNode(msg);
-    if (msg.k === 'bar') return barNode(msg);
-    return lineNode(msg);
-  }
-  // 今日关注进度条：view.goalBar 给 pct、两端含义与文字；这里只画填充条 + 基线/目标两个端标。
-  // 悬停话术（口径的实话）挂在整个条上，别让用户去猜 2960 → 3359 的分子从哪本账来。
-  function barNode(m) {
-    const d = document.createElement('div'); d.className = 'pbar'; if (m.sty) d.classList.add(m.sty);
-    if (m.title) d.title = m.title;
-    const head = document.createElement('div'); head.className = 'pbarHead';
-    head.textContent = m.label + '  ' + m.text;
-    const track = document.createElement('div'); track.className = 'pbarTrack';
-    const fill = document.createElement('div'); fill.className = 'pbarFill' + (m.sty === 'ok' ? ' ok' : '');
-    fill.style.width = Math.max(0, Math.min(100, Number(m.pct) || 0)) + '%';
-    track.append(fill);
-    d.append(head, track);
-    if (m.endLeftTxt || m.endRightTxt) {
-      const ends = document.createElement('div'); ends.className = 'pbarEnds';
-      const l = document.createElement('span'); l.textContent = m.endLeftTxt || '';
-      const r = document.createElement('span'); r.textContent = m.endRightTxt || '';
-      ends.append(l, r);
-      d.append(ends);
-    }
-    return d;
-  }
-  // 首页的今日四列大字卡：view.homeLines 给的 items 有数就大字，没有就灰 '—'（悬停说怎么补）
-  function heroNode(m) {
-    const d = document.createElement('div'); d.className = 'hero';
-    const head = document.createElement('div'); head.className = 'heroHead';
-    head.textContent = (m.own ? '@' + m.own + '  ·  ' : '') + (m.day || '');
-    d.append(head);
-    const grid = document.createElement('div'); grid.className = 'heroGrid';
-    (m.items || []).forEach((it) => {
-      const cell = document.createElement('div'); cell.className = 'heroCell' + (it.max ? ' isMax' : '');
-      if (it.hint) cell.title = it.hint;
-      const lab = document.createElement('div'); lab.className = 'heroLab';
-      lab.textContent = it.label + (it.max ? ' ·最高' : '');
-      const val = document.createElement('div'); val.className = 'heroVal' + (it.v == null ? ' dim' : '');
-      val.textContent = it.v == null ? '—' : it.v;
-      cell.append(lab, val); grid.append(cell);
-    });
-    d.append(grid);
-    if (m.note) {
-      const n = document.createElement('div'); n.className = 'heroNote'; n.textContent = m.note;
-      d.append(n);
-    }
-    return d;
-  }
-  function svgEl(tag, attrs) {
-    const e = document.createElementNS(SVG_NS, tag);
-    Object.keys(attrs || {}).forEach((k) => e.setAttribute(k, attrs[k]));
-    return e;
-  }
-  // 几何全在 view.js 的 chartSpec 里算好（Node 可断言），这里只把点串变成节点
-  function chartNode(s) {
-    const wrap = document.createElement('div'); wrap.className = 'chartBox';
-    const t = document.createElement('div'); t.className = 'chartTitle';
-    t.textContent = s.title + (s.unit ? '（' + s.unit + '）' : '');
-    wrap.append(t);
-    if (s.empty) {
-      const p = document.createElement('div'); p.className = 'chartEmpty'; p.textContent = s.empty;
-      wrap.append(p); return wrap;
-    }
-    const box = s.box, root = svgEl('svg', { viewBox: '0 0 ' + s.w + ' ' + s.h, class: 'chart', role: 'img', 'aria-label': s.title });
-    // view.chartSpec 给的 box.{r,b} 是右/下边界的坐标（不是留白宽度），所以宽高都取差：
-    // 旧写法 s.w - box.r - box.l = 360 - 354 - 40 = -34，Chrome 直接抛
-    // 「<rect> attribute width: A negative value is not valid」并把整次 render 打断。
-    // 再夹一道 ≥0：几何无论怎么变都不该让整页因为一颗矩形画不出来而空白。
-    const pw = Math.max(0, box.r - box.l), ph = Math.max(0, box.b - box.t);
-    root.append(svgEl('rect', { x: box.l, y: box.t, width: pw, height: ph, class: 'plot' }));
-    (s.yTicks || []).forEach((tk) => {
-      root.append(svgEl('line', { x1: box.l, y1: tk.y, x2: s.w - s.box.r, y2: tk.y, class: 'grid' }));
-      const tx = svgEl('text', { x: 2, y: tk.y + 3, class: 'ylab' }); tx.textContent = tk.label; root.append(tx);
-    });
-    (s.series || []).forEach((se) => {
-      if (!se.pts) return;
-      const pl = svgEl('polyline', { points: se.pts, class: 'ln ' + se.cls, fill: 'none' });
-      const ti = document.createElementNS(SVG_NS, 'title');
-      ti.textContent = se.label + '：' + (se.first == null ? '-' : se.first) + ' → ' + (se.last == null ? '-' : se.last) + '（' + se.n + ' 点）';
-      pl.append(ti); root.append(pl);
-    });
-    (s.xTicks || []).forEach((tk, i, arr) => {
-      const tx = svgEl('text', { x: tk.x, y: s.h - 5, class: 'xlab', 'text-anchor': i === 0 ? 'start' : (i === arr.length - 1 ? 'end' : 'middle') });
-      tx.textContent = tk.label; root.append(tx);
-    });
-    wrap.append(root);
-    const leg = document.createElement('div'); leg.className = 'legend';
-    (s.series || []).forEach((se) => {
-      const sp = document.createElement('span'); sp.className = 'lg ' + se.cls;
-      sp.textContent = se.label + ' ' + (se.last == null ? '-' : se.last) + '（' + se.n + ' 点，' + (se.min == null ? '-' : se.min) + '~' + (se.max == null ? '-' : se.max) + '）';
-      leg.append(sp);
-    });
-    wrap.append(leg);
-    return wrap;
-  }
-  // 日线四列表：只读紧凑表恒显示；点「编辑」在浏览器正中间弹一个**独立小窗口**（chrome.windows.create）。
-  // 为什么不留在侧栏里弹：侧栏总共 ~360px 宽，模态框塞进去字都看不清（用户真机截图的原话「太小了，很难使用，
-  // 都看不清什么字」）——扩展自己的 popup 窗口不受这个约束，14px 正常字号、想多大开多大。
-  // 编辑窗只管 时间/总曝光/有效曝光 三列（用户的话：「只需要时间，总曝光，有效曝光就可以了」），
-  // 关注/粉丝/帖子不在窗口里编辑——它们是自动采的列，关注/粉丝本来就同在分钟线一张图里。
-  // 「存/删」在 editor.js 里走 impAdd/impDel（同日按列合并，空框 = 不动那一列）→ SW 转给 x.com 标签页 → 本机库。
-  function impsNode(m) {
-    const d = document.createElement('div'); d.className = 'imps';
-    const mk = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
-    const cell = (txt, tip, c) => { const s = mk('span', c); s.textContent = txt == null ? '' : String(txt); if (tip) s.title = tip; return s; };
-    const head = (labels, cls) => { const r = mk('div', 'impRow ' + cls); labels.forEach((t, i) => r.append(cell(t, '', i === 0 ? 'giDay' : ''))); return r; };
-    const cols = m.head || ['日期', '有效曝光', '曝光', '转化率', '关注', '粉丝', '帖子'];
-    const cap = mk('div', 'cap');
-    cap.append(cell(m.title || ''));
-    const tg = mk('button', 'impToggle'); tg.type = 'button';
-    tg.textContent = '编辑';
-    tg.title = '在浏览器正中间弹独立编辑窗（大字）：补历史 / 改总曝光·有效曝光 / 删行；改完自动保存进本机库，不用点任何按钮';
-    tg.addEventListener('click', () => openEditorWindow(m.who || ''));
-    cap.append(tg);
-    d.append(cap);
-    // v0.8.1-i 用户裁定拆两张表：曝光三列（有效曝光/曝光/转化率）一张，关注/粉丝/帖子单独一张——
-    // 列头仍从 view 的 DAY_HEAD 切（一处给死，这里不许另写一份列名）
-    const dayC = (p) => cell((p.dayDisp || p.day) + (p.hand ? ' [补]' : ''), p.day + (p.hand ? '\n这一行有手工补录的列（曝光来源标 manual，或帖子数是补的）' : '\n全自动采到的行'), 'giDay');
-    const rows = (m.rows || []).slice().reverse();
-    const emptyRow = () => { const r = mk('div', 'impRow impView'); r.append(cell('(一行都没有 —— 点右上「编辑」补历史)')); return r; };
-    const g1 = mk('div', 'impGrid');
-    g1.append(head(cols.slice(0, 4), 'impHead impView'));
-    if (!rows.length) g1.append(emptyRow());
-    rows.forEach((p) => {
-      const r = mk('div', 'impRow impView');
-      r.append(dayC(p),
-        cell(p.effTxt, '当日有效曝光 = 本行累计读数 − 前一日读数（奖励页给的是 90 天滚动累计，相减才是当日）' +
-          (p.effToken ? '\n原文/来源：' + p.effToken : '') + (p.effExact ? '\n精确值' : '\n缩写值（末尾带 ~）') +
-          (p.effAt ? '\n落账：' + p.effAt : '') + '\n奖励页 T+1：今天的数据明天 10 点后开页才有'),
-        cell(p.impTxt, (p.token ? '原文/来源：' + p.token + '　' : '') + (p.exact ? '精确值' : '缩写值（末尾带 ~）') + '\n账号分析页的每日曝光，实时增量'),
-        cell(p.rateTxt, p.rate == null ? '转化率 = 当日有效曝光 ÷ 当日曝光；累计读数缺前一天（或曝光为 0）就算不出' : '转化率 = 当日有效曝光 ÷ 当日曝光'));
-      g1.append(r);
-    });
-    d.append(g1);
-    const cap2 = mk('div', 'cap');
-    cap2.append(cell('关注 / 粉丝 / 帖子（打开主页自动采；帖子数 X 不给，只能补录）'));
-    const tg2 = mk('button', 'impToggle'); tg2.type = 'button';
-    tg2.textContent = '编辑';
-    tg2.title = '在浏览器正中间弹独立编辑窗（大字）：补历史 / 改 关注·粉丝·帖子；改完自动保存进本机库（没有「删」——删整行去上面那张表的编辑窗）';
-    tg2.addEventListener('click', () => openEditorWindow(m.who || '', 'fow'));
-    cap2.append(tg2);
-    d.append(cap2);
-    const g2 = mk('div', 'impGrid');
-    g2.append(head(['日期'].concat(cols.slice(4)), 'impHead impView'));
-    if (!rows.length) g2.append(emptyRow());
-    rows.forEach((p) => {
-      const r = mk('div', 'impRow impView');
-      r.append(dayC(p),
-        cell(p.fowTxt, p.fowHow === 'max' ? '今天分钟线采到的当日最高' : (p.fowHow === 'day' ? '日点表里的值（打开主页自动采，或趋势页手补）' : (p.fow == null ? '没有关注这一天的数' : '这一天最后一次分钟读数'))),
-        cell(p.fansTxt, p.fans == null ? '这一天没有粉丝数' : '这一天最后一次读到的粉丝数'),
-        cell(p.postsTxt, p.posts == null ? '帖子数 X 的 DOM 里没有，只能补录' : '手工补录的帖子数'));
-      g2.append(r);
-    });
-    d.append(g2);
-    return d;
-  }
-  // 独立编辑窗：640×560 居中（getLastFocused 算坐标，算不出就让 Chrome 自己摆）。补录要经
-  // x.com 页面上的采集端写账（impAdd 由 core 执行），编辑窗自己没有 tabId ⇒ 谁来补 tabId
-  // 由 editor.js 查 x.com 标签页解决，跟面板 tabPick 同一套依赖。
-  // kind 缺省 = 曝光两列（总曝光/有效曝光）；'fow' = 关注/粉丝/帖子（同一窗口同一套 impAdd，只换列）。
-  function openEditorWindow(who, kind) {
-    const W = 640, H = 560;
-    const url = chrome.runtime.getURL('ui/editor.html') + '?who=' + encodeURIComponent(who) +
-      (kind ? '&kind=' + encodeURIComponent(kind) : '');
-    try {
-      chrome.windows.getLastFocused({}, (w) => {
-        const opt = { url, type: 'popup', width: W, height: H };
-        if (w && w.width > W) { opt.left = Math.round(w.left + (w.width - W) / 2); opt.top = Math.round(Math.max(0, w.top + (w.height - H) / 2)); }
-        chrome.windows.create(opt);
-      });
-    } catch (e) { chrome.windows.create({ url, type: 'popup', width: W, height: H }); }
-  }
-  // v0.6.11 跨人排名表：列头是按钮（点一次按该列降序，再点切升序），排序状态存模块级变量，
-  // 原因跟 impEdit 一样 —— render() 每次重建整棵树，存在 DOM 上会被自己刷掉。
-  let rankSortBy = 'fans', rankAsc = false;
-  function rankNode(m) {
-    const d = document.createElement('div'); d.className = 'imps rank';
-    const mk = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
-    const cell = (txt, tip, c) => { const s = mk('span', c); s.textContent = txt == null ? '' : String(txt); if (tip) s.title = tip; return s; };
-    const cap = mk('div', 'cap'); cap.append(cell(m.title || '')); d.append(cap);
-    const g = mk('div', 'impGrid');
-    const hr = mk('div', 'impRow impHead rankHead');
-    (m.head || []).forEach((t, i) => {
-      const k = (m.cols || [])[i - 3];          // 名次 / handle / 最新一行 三列不可排，第四列起才是数值列
-      if (!k) { hr.append(cell(t, '', i === 0 ? 'giDay' : '')); return; }
-      const b = mk('button', 'rkHead' + (m.sortBy === k ? ' on' : '')); b.type = 'button'; b.textContent = t;
-      b.title = '按' + ((m.labels || {})[k] || t) + '排（再点一次换方向）';
-      b.addEventListener('click', () => {
-        if (rankSortBy === k) rankAsc = !rankAsc; else { rankSortBy = k; rankAsc = false; }
-        rankLimit = 10;
-        render();
-      });
-      hr.append(b);
-    });
-    g.append(hr);
-    const rows = m.rows || [];
-    if (!rows.length) { const r = mk('div', 'impRow impView'); r.append(cell('(一个人都还没有 —— 先打开几个主页，或点上面「从本机库回填」)')); g.append(r); }
-    const fmt = (v, r, k) => {
-      if (v == null) return '—';
-      const dv = k === 'fow' ? r.dFow : (k === 'fans' ? r.dFans : (k === 'imp' ? r.dImp : r.dPosts));
-      const sign = dv == null ? '' : (dv >= 0 ? ' +' : ' ') + dv;
-      return V.nf(v) + sign;
-    };
-    rows.forEach((r) => {
-      const tr = mk('div', 'impRow impView' + (r.own ? ' rankOwn' : '') + (r.stale ? ' stale' : ''));
-      tr.append(cell(r.rank + (r.own ? ' *' : ''), r.own ? '这就是你自己在库里的 handle' : '@' + r.h + ' 的最新一行', 'giDay'),
-        cell(r.h, '@' + r.h + (r.day ? '　最新一行 ' + r.day : '　还没有日点'), 'rkH'),
-        cell(r.day || '-', r.at ? '这条序列最后写入时间戳 ' + new Date(r.at).toLocaleString() : '没有写入时间'),
-        cell(fmt(r.imp, r, 'imp'), '曝光：只有自己的号能从奖励页读到，别人的主页 DOM 里根本没有这个数（空=读不到，不是 0）'),
-        cell(fmt(r.fow, r, 'fow'), '关注' + (r.dFow == null ? '（只有一行，算不出净增）' : '：较上一行 ' + (r.dFow >= 0 ? '+' : '') + r.dFow)),
-        cell(fmt(r.fans, r, 'fans'), '粉丝' + (r.dFans == null ? '（只有一行，算不出净增）' : '：较上一行 ' + (r.dFans >= 0 ? '+' : '') + r.dFans)),
-        cell(r.posts == null ? '—' : V.nf(r.posts), r.posts == null ? '帖子数 X 的 DOM 里没有，只能手补' : '手工补录的帖子数'),
-        cell((r.dFow == null && r.dFans == null ? '—' : (r.dFow == null ? '?' : (r.dFow >= 0 ? '+' : '') + r.dFow) + '/' + (r.dFans == null ? '?' : (r.dFans >= 0 ? '+' : '') + r.dFans)),
-          '关注/粉丝 各较上一行的净增' + (r.prevDay ? '（上一行 ' + r.prevDay + '）' : '（他只有一行，算不出净增）')),
-        cell(r.ageTxt, '这行数据多久没更新了（超过两天标灰：排名只比"还活着的人"）'));
-      g.append(tr);
-    });
-    d.append(g);
-    if (m.more > 0) d.append(moreBtnNode(m.more, () => { rankLimit += 10; render(); }));
-    return d;
-  }
-  // 「更多」按钮（v0.8.1-t 榜分页共用）：k:'rank' 与两张 k:'grid' 的榜都走「先出 10 条、点了 +10」。
-  function moreBtnNode(left, onMore) {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'rkHead moreBtn';
-    b.textContent = '更多（还有 ' + left + ' 条，每次 +10）';
-    b.title = '分页是给面板看的：几百行塞进 400px 侧栏既看不清也拖慢 900ms 刷新；换排序回到第一页；完整排名随时可以在库里查';
-    b.addEventListener('click', onMore);
-    return b;
-  }
-  // v0.7.0 本机库两张榜（k:'grid'）：列头里带 sort key 的是可点的排序键（只降序 —— 榜问的是「谁最高」），
-  // 排序状态存模块级变量，跟 impEdit/rankSortBy 同一个原因：render() 每次都重建整棵树。
-  let acctSort = 'views', postSort = 'view';
-  // 榜分页（v0.8.1-t）：一次 10 条、「更多」每次 +10；换排序回到第一页（新序从头看）。同存模块级变量防 900ms 重画刷掉。
-  let acctLimit = 10, postLimit = 10, rankLimit = 10;
-  // 时间线曝光排序榜（v0.8.2）：选中的天（'' = 还没选，首批数据回来后落到最近有数的那天）、来源筛选、分页
-  let tlDay = '', tlSrcf = '', tlLimit = 10, tlSort = 'view';
-  // 点昵称的作者模态框（v0.8.2）：看谁（'' = 关着）、那条 author_posts 查询的回包与在途标志
-  let tlUser = '', tlUserDb = null;
-  function closeTlUser() { tlUser = ''; tlUserDb = null; render(); }
-  function openTlUser(author) {
-    if (!/^[A-Za-z0-9_]{1,20}$/.test(author || '')) return;
-    tlUser = author; tlUserDb = null; render();
-    send({ t: 'dbq', q: 'author_posts', limit: 200, author: author }).then((res) => {
-      if (tlUser !== author) return;   // 回包路上用户已经换了人或关掉：旧回包不许盖新状态
-      tlUserDb = res; render();
-    }).catch(() => { if (tlUser === author) { tlUserDb = { ok: false, err: '查询发不出去' }; render(); } });
-  }
-  // 作者模态框：读 author_posts 回包画成一列帖子（每条也是链接）。覆盖层点空白处关，× 也关。
-  function tlUserModalNode() {
-    const mk = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
-    const cell = (txt, c) => { const s = mk('span', c); s.textContent = txt == null ? '' : String(txt); return s; };
-    const wrap = mk('div', 'tlModalWrap');
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) closeTlUser(); });
-    const box = mk('div', 'tlModal');
-    const head = mk('div', 'tlModalHead');
-    const ttl = mk('span', 'tlModalTitle');
-    ttl.textContent = '@' + tlUser + ' · 已抓到的帖子（按曝光排序）';
-    const x = mk('button', 'tlModalX'); x.type = 'button'; x.textContent = '×'; x.title = '关闭';
-    x.addEventListener('click', closeTlUser);
-    head.append(ttl, x);
-    box.append(head);
-    const body = mk('div', 'tlModalBody');
-    if (!tlUserDb) {
-      body.append(cell('读取中…', '', 'pre'));
-    } else if (!tlUserDb.ok) {
-      body.append(cell('查询失败：' + (tlUserDb.err || '没回包'), '', 'bad'));
-    } else {
-      const rows = V.tlUserRows(tlUserDb);
-      if (!rows.length) body.append(cell('@' + tlUser + ' 还没有抓到过帖子：他的帖子要在时间线/主页被抓到才有', '', 'pre'));
-      rows.forEach((r) => {
-        const a = mk('a', 'tlCard');
-        a.href = r.href; a.target = '_blank'; a.rel = 'noopener noreferrer';
-        a.title = '曝光 ' + r.view + ' · 评论 ' + r.reply + ' · 看到 ' + r.hm + '\n点击跳原帖\n正文：' + r.text;
-        const top = mk('div', 'tlTop');
-        top.append(cell(r.view, '', 'tlView'), cell('评 ' + r.reply, '', 'tlReply'), cell(r.hm, '', 'tlAt'));
-        const tx = mk('div', 'tlTxt'); tx.textContent = r.text || '';
-        a.append(top, tx);
-        body.append(a);
-      });
-    }
-    box.append(body);
-    wrap.append(box);
-    return wrap;
-  }
-  function gridNode(m) {
-    const d = document.createElement('div'); d.className = 'imps dbgrid ' + (m.cls || '');
-    const mk = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
-    const cell = (txt, tip, c) => { const s = mk('span', c); s.textContent = txt == null ? '' : String(txt); if (tip) s.title = tip; return s; };
-    const cap = mk('div', 'cap'); cap.append(cell(m.title || '')); d.append(cap);
-    // 时间线榜的选天 + 来源筛选（v0.8.2）：状态在模块变量里（render() 每次重建整棵树，存 DOM 上会被自己刷掉）；
-    // 换天要重发 tl_rank 查询（day 是 SQL 参数），所以只有它走 fetchDb(true)，来源筛选纯前端过滤。
-    if (m.cls === 'tl') {
-      const bar = mk('div', 'tlBar');
-      const sel = mk('select', 'tlDay');
-      sel.title = '选哪一天：时间线曝光排序按天一张榜（最近有数的天已经替你选好）';
-      (m.days || []).forEach((dy) => {
-        const op = document.createElement('option');
-        op.value = dy; op.textContent = dy;
-        if (dy === m.day) op.selected = true;
-        sel.append(op);
-      });
-      sel.addEventListener('change', () => { tlDay = sel.value; tlLimit = 10; fetchDb(true); });
-      bar.append(sel);
-      [['', '全部'], ['foryou', '为你推荐'], ['following', '正在关注']].forEach(([k, lab]) => {
-        const b = mk('button', 'rkHead' + (m.srcf === k ? ' on' : '')); b.type = 'button'; b.textContent = lab;
-        b.addEventListener('click', () => { tlSrcf = k; tlLimit = 10; render(); });
-        bar.append(b);
-      });
-      // 排序键：曝光 / 评论（同一抓取点的两列，客户端重排）
-      [['view', '曝光'], ['reply', '评论']].forEach(([k, lab]) => {
-        const b = mk('button', 'rkHead' + ((m.sort || 'view') === k ? ' on' : '')); b.type = 'button'; b.textContent = lab;
-        b.title = '按' + lab + '排（降序）';
-        b.addEventListener('click', () => { tlSort = k; tlLimit = 10; render(); });
-        bar.append(b);
-      });
-      d.append(bar);
-    }
-    // 时间线榜走卡片（用户裁定 2026-10-26）：正文当主视觉、作者/来源收进悬浮、点卡片跳原帖（新开标签）。
-    // 纯 <a href> + CSS :hover，不派发任何事件；360px 宽度塞六列本来就挤，卡片还能多放一行正文。
-    if (m.cards) {
-      const wrap = mk('div', 'tlCards');
-      if (!m.cards.length) {
-        const r = mk('div', 'impRow impView'); r.append(cell(m.empty || '(空)')); wrap.append(r);
-      }
-      m.cards.forEach((c) => {
-        const a = mk('a', 'tlCard');
-        a.href = c.href || '#'; a.target = '_blank'; a.rel = 'noopener noreferrer';
-        if (c.tip) a.title = c.tip;
-        const top = mk('div', 'tlTop');
-        top.append(cell(c.rank, '', 'giDay'), cell(c.hm, '', 'tlAt'), cell('评 ' + c.reply, '', 'tlReply'), cell(c.view, '', 'tlView'));
-        const tx = mk('div', 'tlTxt'); tx.textContent = c.text || '';
-        const mt = mk('div', 'tlMeta');
-        const un = mk('span', 'tlUser'); un.textContent = '@' + c.author;
-        un.title = '看 @' + c.author + ' 所有已抓到的帖子（按曝光排序）';
-        // 卡片本体是跳原帖的 <a>：昵称这一小块截住点击，开作者模态框
-        un.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openTlUser(c.author); });
-        mt.append(un, cell(' · ' + c.src));
-        a.append(top, tx, mt);
-        wrap.append(a);
-      });
-      d.append(wrap);
-      if (m.more > 0) d.append(moreBtnNode(m.more, () => { tlLimit += 10; render(); }));
-      if (m.note) { const n = mk('div', 'dbNote'); n.textContent = m.note; d.append(n); }
-      return d;
-    }
-    const g = mk('div', 'impGrid');
-    const hr = mk('div', 'impRow impHead');
-    (m.head || []).forEach((t, i) => {
-      const k = (m.cols || [])[i];
-      if (!k) { hr.append(cell(t, '', i === 0 ? 'giDay' : '')); return; }
-      const b = mk('button', 'rkHead' + (m.sortBy === k ? ' on' : '')); b.type = 'button'; b.textContent = t;
-      b.title = '按' + ((m.labels || {})[k] || t) + '排（降序）';
-      b.addEventListener('click', () => {
-        if (m.cls === 'post') { postSort = k; postLimit = 10; } else { acctSort = k; acctLimit = 10; }
-        render();
-      });
-      hr.append(b);
-    });
-    g.append(hr);
-    const rows = m.rows || [];
-    if (!rows.length) {
-      const r = mk('div', 'impRow impView'); r.append(cell(m.empty || '(空)')); g.append(r);
-    }
-    rows.forEach((r) => {
-      const tr = mk('div', 'impRow impView' + (r.cls ? ' ' + r.cls : ''));
-      if (r.tip) tr.title = r.tip;
-      (r.cells || []).forEach((c) => tr.append(cell(c.t, c.tip || '', c.c || '')));
-      g.append(tr);
-    });
-    d.append(g);
-    if (m.more > 0) d.append(moreBtnNode(m.more, () => {
-      if (m.cls === 'post') postLimit += 10;
-      else if (m.cls === 'tl') tlLimit += 10;
-      else acctLimit += 10;
-      render();
-    }));
-    if (m.note) { const n = mk('div', 'dbNote'); n.textContent = m.note; d.append(n); }
-    return d;
-  }
-  function rowNode(m) {
-    const d = document.createElement('div'); d.className = 'row';
-    const a = document.createElement('span'); a.textContent = m.label;
-    const b = document.createElement('span'); b.textContent = m.value; if (m.sty) b.className = m.sty;
-    if (m.title) d.title = m.title;
-    d.append(a, b); return d;
-  }
-  function lineNode(m) {
-    const d = document.createElement('div');
-    d.className = m.sty === 'pre' ? 'pre' : (m.sty || 'pre');
-    d.textContent = m.text; return d;
-  }
-  function foldNode(m) {
-    const d = document.createElement('details');
-    const s = document.createElement('summary'); s.textContent = m.title;
-    const p = document.createElement('pre'); p.textContent = m.text;
-    d.append(s, p); return d;
-  }
+  let followAll = false;   // v0.12.4「未回关」页：默认折起已回关，按一下才全列
 
   // 顶部那条 60 秒冷却横幅：红=别关注（带倒计时），绿=可以关注。
   // 秒数靠本地 1s 节拍器重画，不等 900ms 的状态轮询 —— 面板自己算得起，别为这个数字多问页面一次。
@@ -490,12 +62,9 @@
     root.textContent = '';
     $('err').textContent = out.err;
     if (!st) doView(root);
-    else if (view === 'debug' && !(st.debug && st.debug.on)) { view = 'home'; doView(root); }  // 开关被关掉就别停在诊断上
     else if (view === 'set') renderSet(root);
     else doView(root);
-    if (view === 'plaza' && tlUser) root.append(tlUserModalNode());   // 作者模态框盖在广场上（状态在模块变量，900ms 重画跟着重建）
     syncButtons();
-    syncWho();
     paintCool();
     // 设置区与 state 对表：用户正在打字时不覆盖（别把没按「应用」的数摸掉）
     // ⚠ st 可以是 null（活动标签页不是 x.com / core 还没 boot 完 / 那一跳超时）——
@@ -520,54 +89,17 @@
       (st.peer ? '  ⚠同页还有 ' + st.peer : '') +
       '   [' + viewName() + '] 序列 ' + (sc.min || 0) + 'min/' + (sc.imp || 0) + 'day';
   }
-  // 视图分发（没 state 时也按当前视图给引导，别把页面读成白屏）
-  // 逐个节点接住异常：一颗画坏（典型是 SVG 尺寸/几何）不许把后面的行一起拖没，
-  // 也不许在控制台留下一条看不出是谁的错——就地变成一行说明是哪一块。
-  function appendSafe(root, list) {
-    (list || []).forEach((m) => {
-      try { root.append(tick(m)); }
-      catch (e) {
-        root.append(lineNode({ k: 'line', text: '这一块没画出来（' + String((m && m.k) || '?') + '）：' + String((e && e.message) || e) }));
-      }
-    });
-  }
+  // 视图分发（没 state 时也按当前视图给引导，别把页面读成白屏）。
+  // 逐节点兜底（appendSafe）在 ui/kit.js：一颗画坏不许把后面的行一起拖没。
   function doView(root) {
-    if (!st) { root.append(lineNode({ k: 'line', text: '正在等 content script 报状态……（页面得是 x.com，且探针已注入）' })); paintCool(); return; }
-    if (view === 'mine') { root.append(digestBox(V.mineDigestText(st))); appendSafe(root, V.mineLines(st)); }
-    else if (view === 'plaza') appendSafe(root, V.plazaLines(st, { by: rankSortBy, asc: rankAsc, now: Date.now(), acct: acctSort, post: postSort, db: db, acctLimit: acctLimit, postLimit: postLimit, rankLimit: rankLimit, tlSrcf: tlSrcf, tlDay: tlDay, tlLimit: tlLimit, tlSort: tlSort }));
-    else if (view === 'forecast') appendSafe(root, V.fansForecastLines(st));
-    else if (view === 'debug') { if (qKeep) appendSafe(root, qKeep); appendSafe(root, V.debugLines(st)); }
-    else appendSafe(root, V.homeLines(st));
+    if (!st) { root.append(K.lineNode({ k: 'line', text: '正在等 content script 报状态……（页面得是 x.com，且探针已注入）' })); paintCool(); return; }
+    // v0.12.13（art-032）：mine/plaza/forecast/debug 四个数据密集视图搬进工作台 ui/dashboard.html；
+    // 侧边栏只留高频三视图（home/follow/set）。「看谁/回填/重读库/查表」随视图一起搬。
+    if (view === 'follow') K.appendSafe(root, V.followBackLines(st, { db: db, now: Date.now(), all: followAll }));
+    else K.appendSafe(root, V.homeLines(st));
   }
-  // 「我的」页顶部的可复制日志摘要（v0.8.1-r）+ 六行日报「复制日报」钮（v0.8.1-s）：
-  // 只读 textarea + 复制钮，文本来自 view.mineDigestText；日报文本来自 view.mineReportText，
-  // 评论数没有采集来源 ⇒ 旁边手填一格（按天记 chrome.storage.local，第二天自动清空）。
-  // 900ms 回读整页重画；摘要内容没变就复用同一个节点（append 会把它从旧根搬过来）——
-  // 用户手动划选/聚焦摘要文本时，不至于每 0.9 秒被拆一次焦点和选区。
-  let digestEl = null;
-  // 评论数按天记 chrome.storage.local（扩展自己的存储；UI 层红线禁页面 origin 存储）。
-  // 读是异步的：只在新建摘要框时回填一次，节点复用时用户正在打的值不动。
-  function replDay() { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-  function loadReplInto(el) {
-    try {
-      chrome.storage.local.get('repl', (v) => {
-        const r = v && v.repl;
-        if (r && r.day === replDay() && el.isConnected && el.value === '') el.value = String(r.n);
-      });
-    } catch (e) { /* 读不到就当次手填 */ }
-  }
-  function saveRepl(n) { try { chrome.storage.local.set({ repl: { day: replDay(), n: n } }); } catch (e) { /* 存不了就只当次有效 */ } }
-  async function copyText(txt, okMsg, failMsg, btn, resetMsg, fallbackSel) {
-    let done = false;
-    try { await navigator.clipboard.writeText(txt); done = true; }
-    catch (e) {
-      // clipboard API 不可用（页面没聚焦等）就退回选区 + execCommand（必须趁选区还在同步执行）；再不行老实报失败
-      try { if (fallbackSel) done = !!fallbackSel(); } catch (e2) { /* 老实说 */ }
-    }
-    btn.textContent = done ? okMsg : failMsg;
-    setTimeout(() => { btn.textContent = resetMsg; }, 1200);
-    return done;
-  }
+  // v0.12.14（art-033）：摘要框家族（digestBox/digestEl 复用/评论数按天记/copyText 剪贴板两段式）抽进 ui/kit.js，
+  // 面板与工作台共用一份；「我的」视图随 v0.12.13 搬进工作台，面板侧已无直接调用（设置弹窗的复制走 K.copyText）。
   function digestBox(text) {
     if (digestEl && digestEl.dataset.txt === text) return digestEl;
     const wrap = document.createElement('div'); wrap.className = 'digestBox';
@@ -953,7 +485,7 @@
   // 「运行模式」与「扩展 ID + 安装命令」原来在这里各回显一遍（一处状态两处写，还叠了一整段安装说明），
   // v0.9.8 起收进 setBox 那几行的状态位与 ❓ —— 同一个事实只在一个地方出现。
   function renderSet(root) {
-    const show = (l, v, sty) => root.append(rowNode({ k: 'row', label: l, value: v, sty: sty || '' }));
+    const show = (l, v, sty) => root.append(K.rowNode({ k: 'row', label: l, value: v, sty: sty || '' }));
     const sr = st.series || {};
     show('我的账号现在是谁', '@' + (sr.own || '(还不知道)') + '　来源：' +
       (sr.ownSet ? '设置里钉的（把上面那格清空再点应用 = 回到自动识别）' : (sr.own ? '自动识别（认到的是 @' + (sr.ownAuto || sr.own) + '）' : '还没认到：进一次自己的主页')),
@@ -963,70 +495,51 @@
       ' · 目标 +' + gt.target : '（还没设过：目标默认 399，基线自动）');
     // 本机目录的占用账（v0.8.8）：数字全是 xprobe_fs.py 量回来的，面板一个字节都不自己算——
     // 算的是「按保留天数能清多少」，这口径只有本机知道文件名。没测过时这行自己会说该点哪枚钮。
-    root.append(rowNode(V.fsRow(fs)));
+    root.append(K.rowNode(V.fsRow(fs)));
   }
   function viewName() {
-    return view === 'mine' ? '我的' : view === 'plaza' ? '广场' : view === 'forecast' ? '预测' : view === 'debug' ? '诊断' : view === 'set' ? '设置' : '首页';
+    return view === 'follow' ? '未回关' : view === 'set' ? '设置' : '首页';
   }
 
   function refreshState() {
     return cmd('state').then(() => { if (!out.err) render(); return applyWho(); });
   }
 
-  // ---------- 本机库（v0.7.0）：广场两张榜 ----------
-  // 三条白名单查询（并行发，各起一个宿主进程，墙钟约等于最慢那条）：
-  // accounts 给账号榜与建议；posts_top 按曝光取前 200、posts_growth 按增速取前 200 ——
-  // 只查其中一条会出错：按增速取回的 200 条里再按曝光排，「曝光榜第一名」就成了一句假话。
-  // 两份帖子按 tweet_id 合成一份（增速那路补上 view_gain/hours/view_per_h）。
-  // v0.8.2 再加两条时间线的：tl_days（有哪几天）与 tl_rank（选中的那天按曝光排）。
+  // ---------- 本机库（v0.7.0 起读库；v0.12.14 精简为只读未回关名单） ----------
+  // 广场两张榜/时间线随 v0.12.13 搬进工作台（dashboard.js 有带数据源二选一的完整版）；
+  // 面板的「未回关」页只需要 follow_starts 一条（每次 sendNativeMessage 新起一个宿主进程，别为看不见的表多起）。
+  // SQL 永远在 xprobe_db.py 的 QUERIES 白名单里，面板与 SW 都不拼 SQL。
+  let db = null, dbBusy = false, dbAt = 0;
+  function one(q, limit, day) {
+    return send({ t: 'dbq', q: q, limit: limit, day: day });
+  }
   function fetchDb(force) {
     if (dbBusy) return Promise.resolve(db);
     if (!force && db && Date.now() - dbAt < 15000) return Promise.resolve(db);
     dbBusy = true;
     const t0 = Date.now();
-    const one = (q, limit, day) => send({ t: 'dbq', q: q, limit: limit, day: day });
-    return Promise.all([one('accounts', 500), one('posts_top', 200), one('posts_growth', 200),
-      one('tl_days', 60), one('tl_rank', 500, tlDay)]).then((rs) => {
-      const a = rs[0] || {}, top = rs[1] || {}, gr = rs[2] || {}, tld = rs[3] || {}, tlr = rs[4] || {};
-      const rows = [], byId = {};
-      (Array.isArray(top.rows) ? top.rows : []).forEach((r) => {
-        if (r && r.tweet_id && !byId[r.tweet_id]) { byId[r.tweet_id] = r; rows.push(r); }
-      });
-      (Array.isArray(gr.rows) ? gr.rows : []).forEach((r) => {
-        if (!r || !r.tweet_id) return;
-        const cur = byId[r.tweet_id];
-        if (!cur) { byId[r.tweet_id] = r; rows.push(r); return; }
-        ['view_gain', 'hours', 'view_per_h', 'like_gain'].forEach((k) => { if (r[k] != null) cur[k] = r[k]; });
-      });
+    return one('follow_starts', 500).then((r) => {
       dbBusy = false; dbAt = Date.now();
-      const postErr = !top.ok ? (top.err || '没回包') : (!gr.ok ? (gr.err || '没回包') : '');
       db = {
-        at: dbAt, ms: dbAt - t0,
-        id: a.id || top.id || gr.id || '', via: a.via || top.via || gr.via || '',
-        native: a.native || top.native || gr.native || null,
-        acct: { ok: !!a.ok, rows: Array.isArray(a.rows) ? a.rows : [], err: a.ok ? '' : (a.err || '没回包') },
-        post: { ok: !!(top.ok && gr.ok), rows: rows, err: postErr },
-        tlDays: { ok: !!tld.ok, rows: Array.isArray(tld.rows) ? tld.rows : [], err: tld.ok ? '' : (tld.err || '没回包') },
-        tl: { ok: !!tlr.ok, rows: Array.isArray(tlr.rows) ? tlr.rows : [], err: tlr.ok ? '' : (tlr.err || '没回包') },
+        at: dbAt, ms: dbAt - t0, via: r.via || '', native: r.native === undefined ? null : r.native,
+        followStarts: { ok: !!r.ok, rows: Array.isArray(r.rows) ? r.rows : [], err: r.ok ? '' : (r.err || '没回包') },
       };
-      // 首批回包还没选过天：落到「最近有数的那天」再补一枪（只落一次，之后选择权在用户手里）
-      if (!tlDay && db.tlDays.ok && db.tlDays.rows.length) {
-        tlDay = db.tlDays.rows[0].day;
-        dbBusy = false;
-        return fetchDb(true);
-      }
-      if (view === 'plaza') render();
+      // v0.12.4：把同一份「一人一行」结论交给 SW 上送（云端不另判一次）。
+      // 库这趟没读到就存空 rows —— 绝不把上一轮的旧结论当本轮真相；写失败不拖垮面板渲染。
+      try {
+        chrome.storage.local.set({ 'ysy.xprobe.followStarts': { rows: db.followStarts.rows, at: dbAt } });
+      } catch (e) { /* 存储写不了就只当次有效 */ }
+      render();
       return db;
     });
   }
-
   // ---------- 「看谁」（v0.6.12：视线只在广场换人，其余视图一律钉在自己身上） ----------
   // state 每次回读的 series 都是 own 那份（core 的默认视线），广场选中别人时补一趟 seriesView 把视线换过去。
   // 不这么做的后果很具体：900ms 轮询会把面板从「这个人」弹回「我自己」，编辑框里一半是他的数一半是我的。
   // 反过来也一样要管：从广场（看着别人）切回首页/我的，若视线还挂在他身上，首页那张「今日四列」就报成了他的账号。
   function whoTarget() {
-    const own = (st && st.series && st.series.own) || '';
-    return view === 'plaza' ? (whoSel || own) : own;
+    // v0.12.13：「看谁」随广场搬进工作台，面板视图恒看自己
+    return (st && st.series && st.series.own) || '';
   }
   function applyWho() {
     if (!st || !st.series) return Promise.resolve();
@@ -1036,29 +549,6 @@
       // cmd 内部已经把 st 换成回包里的 state（那份的 series 又是 own 的），这里再把视线掰回来
       if (r.ok && r.result) { st.series = r.result; render(); }
     });
-  }
-  // 下拉的料来自 st.series.handles（core 按 updatedAt 排好、自己在最前）。
-  // 选中的人被序列上限挤掉了就自动回到自己 —— 留着一个不存在的 handle 会让下面所有表都空着，最难查
-  function syncWho() {
-    const sel = $('whoPick');
-    if (!sel) return;
-    const hs = (st && st.series && st.series.handles) || [];
-    if (whoSel && !hs.some((h) => h.h === whoSel)) whoSel = '';
-    sel.textContent = '';
-    const o0 = document.createElement('option');
-    o0.value = ''; o0.textContent = '（只看排名）';
-    sel.append(o0);
-    hs.forEach((h) => {
-      if (h.own) return;
-      const o = document.createElement('option');
-      o.value = h.h;
-      o.textContent = '@' + h.h + ' 日' + h.imp + (h.min ? ' 分' + h.min : '');
-      sel.append(o);
-    });
-    sel.value = whoSel || '';
-    sel.disabled = hs.filter((h) => !h.own).length === 0;
-    sel.title = sel.disabled ? '序列里只有自己：多开几个别人的主页就会各落一行（广场的日点表按人记）'
-      : '选谁就在下面看谁、编辑谁（只影响广场；自己的历史在「我的」页）';
   }
 
   function refreshTabs() {
@@ -1093,22 +583,9 @@
       render();
     });
   }
-  // 查表的结果存模块变量，由 render() 在诊断视图里重放 —— 不直接往 #report 里 prepend。
-  // 病根（docs/UIX.md UIX-18）：#report 每 900ms 被 render() 整块清空，直接塞进去的查询结果
-  // 最多活 0.9 秒；这跟 v0.9.8 给设置页修掉的是同一张嘴，当时只修了设置页，诊断页这条漏了。
-  let qKeep = null;
-  function doQuery() {
-    const q = $('q').value || '';
-    return cmd('query', q).then((r) => {
-      const c = (r.result && r.result.counts) || {};
-      const head = { k: 'line', text: '查询 "' + q + '"（users ' + c.users + ' / posts ' + c.posts + '）：' };
-      const body = (r.ok && r.result) ? V.queryLines(r.result).slice().reverse()
-        : [{ k: 'line', text: '查表没成：' + (r.err || '没回包') }];
-      qKeep = [head].concat(body);
-      render();
-    });
-  }
-  // 补录/改数/删行全在趋势页的日点网格里做（impsNode）；这里的旧 doBackfill/bkBox 已退休。
+  // v0.12.13：查表（qKeep/doQuery）随诊断视图搬进工作台 dashboard.js —— 同一套「结果存模块变量、
+  // render() 重放」的机制（docs/UIX.md UIX-18 那张嘴的教训两边都记住了）。
+  // 补录/改数/删行全在工作台「我的」页的日点网格里做（impsNode）；旧 doBackfill/bkBox 已退休。
 
   // 视图与按钮归位（v0.6.9 UI 整顿）：区块按 view 显隐，按钮文本随 core 回读、不存本地真相。
   // 用 classList.toggle 而不是整个覆写 className——那是踩过的坑：className='' 把布局类 bar 一起抹掉，
@@ -1119,19 +596,18 @@
     // 原来那句直接 .textContent = → 整块 syncButtons 抛出去，前面那些视图显隐跟着一起没跑（点了没反应）。
     const setTxt = (id, s) => { const el = $(id); if (el) el.textContent = s; };
     show('barHome', view === 'home');
-    show('barTrend', view === 'mine' || view === 'plaza' || view === 'forecast');
-    show('barDebug', view === 'debug');
+    show('barTrend', view === 'follow');
     show('setBox', view === 'set');
-    show('whoPick', view === 'plaza');   // 「看谁」只在广场有意义：我的页视线恒在自己身上
-    show('bDbRefresh', view === 'plaza');
+    show('bFollowAll', view === 'follow');
     syncFsControls();
     // 「清空」的等第二下也要写在钮上（和清日志那三颗同一个规矩）；这一句必须排在 `if (!st) return` 之前，
     // 否则活动标签页不是 x.com 时（st 为 null）钮就永远不改口 —— 那是「点了没反应」的另一种成因。
     setTxt('bClear', (clearArm && Date.now() - clearArm < ARM_MS) ? '再点一次=清空' : '清空');
-    const tabsOn = { home: 'vHome', mine: 'vMine', plaza: 'vPlaza', forecast: 'vFc', debug: 'vDebug', set: 'vSet' };
+    setTxt('bFollowAll', followAll ? '只看未回关' : '显示全部');
+    const tabsOn = { home: 'vHome', follow: 'vFollow', set: 'vSet' };
     Object.keys(tabsOn).forEach((k) => {
       const b = $(tabsOn[k]);
-      if (b) b.className = view === k ? 'on' : (k === 'debug' && !(st && st.debug && st.debug.on) ? 'hide' : '');
+      if (b) b.className = view === k ? 'on' : '';
     });
     if (!st) return;
     const dbgOn = !!(st && st.debug && st.debug.on);
@@ -1143,16 +619,22 @@
     setTxt('bBadge', '页面内徽标: ' + (st.badge && st.badge.on ? '开' : '关'));
     setTxt('bHotBadge', '热点徽标: ' + (st.hotbadge && st.hotbadge.on ? '开' : '关'));
     setTxt('bFabRail', '显示钮排: ' + (st.fabrail && st.fabrail.on ? '开' : '关'));
+    // v0.12.9：八颗钮的勾选回显。st.fabvis 缺字段（面板比 core 新）时一律按「全显」，
+    // 别把老 core 的页面误显示成「全关」。用 .checked 直写不派事件（回显不是用户动作）。
+    Array.prototype.forEach.call(document.querySelectorAll('#fabVisGrid input[data-fab]'), (box) => {
+      const id = box.getAttribute('data-fab');
+      box.checked = !(st.fabvis && st.fabvis[id] === false);
+    });
   }
   function setView(v) {
-    view = ['home', 'mine', 'plaza', 'debug', 'set', 'forecast'].indexOf(v) >= 0 ? v : 'home';
-    if (view !== 'debug') qKeep = null;   // 查表的结果只在诊断视图重放，离开就丢（别在别的页顶出一段旧查询）
+    // v0.12.13：mine/plaza/forecast/debug 搬进工作台（dashboard.html），面板白名单只剩三视图
+    view = ['home', 'follow', 'set'].indexOf(v) >= 0 ? v : 'home';
     syncButtons();
     render();
-    // 进出我的/广场要按新的视线重取一次序列：广场跟着「看谁」走，其余视图一律回到自己
+    // 按新的视线重取一次序列：面板视图恒看自己（「看谁」随广场搬进工作台）
     applyWho();
-    // 进广场就重读一次库（两张榜的真身在 xprobe.db）；别的视图不读，别为看不见的表起宿主进程
-    if (view === 'plaza') fetchDb(true);
+    // 未回关页要读 follow_starts（真身在 xprobe.db）；别的视图不读，别为看不见的表起宿主进程
+    if (view === 'follow') fetchDb(true);
     // 换视图顺手回读一次 state：广场那条轮询是 30 秒一轮，刚在这一页上关注完不该等半分钟才翻红
     refreshState();
   }
@@ -1269,7 +751,7 @@
       const b = document.createElement('button');
       b.type = 'button'; b.textContent = label;
       b.addEventListener('click', () => {
-        copyText(pre.textContent, okMsg, '复制失败（划选上面那行）', b, label,
+        K.copyText(pre.textContent, okMsg, '复制失败（划选上面那行）', b, label,
           () => { const r = document.createRange(); r.selectNodeContents(pre);
             const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); return document.execCommand('copy'); });
       });
@@ -1887,10 +1369,7 @@
     bFlush: () => cmd('flush'),
     bExport: () => doExport(),
     bSample: () => cmd('sample'),
-    bDbRefresh: () => fetchDb(true),
-    bPing: () => cmd('ping'),
-    bStats: () => cmd('stats'),
-    bQuery: () => doQuery(),
+    // v0.12.13：bDbRefresh/bPing/bStats/bQuery/bRestore 随广场/我的/诊断搬进工作台（dashboard.js 各有一份）
     // 低频工具归设置页：深挖/抓整页是排障动作，重算与清空是维护动作
     bProbe: () => cmd('probe'),
     bDumpOnce: () => cmd('dumpOnce'),
@@ -1904,9 +1383,10 @@
     bFabRail: () => cmd('setFabRail', !(st && st.fabrail && st.fabrail.on)),
     // art-021 R2：钮排位置复位（只动位置，不碰总闸与折叠态）
     bFabPos: () => cmd('fabPosReset').then(() => noteSet('钮排位置已复位到右缘默认位（right 14 / bottom 210）', 'ok')),
+    // v0.12.13：诊断视图搬进工作台后，这颗闸只翻开关本身；「看那一眼」去工作台的「诊断」页签
     bDebug: () => {
       const on = !(st && st.debug && st.debug.on);
-      return cmd('setDebug', on).then(() => { if (on) setView('debug'); });
+      return cmd('setDebug', on).then(() => { if (on) noteSet('诊断模式已开：去工作台（右上「工作台 ↗」）的「诊断」页签看读数质量/查表/漏抓清单', 'ok'); });
     },
     bRebuild: () => cmd('rebuild').then((r) => {
       if (!r.ok || !r.result) return;
@@ -1930,23 +1410,17 @@
       return Promise.resolve();
     },
     // 从本机库回填：面板只读浏览器存储、不读 xprobe.db，所以直接写进库的历史（backfill_days.py）要靠这步才看得见
-    bRestore: () => cmd('impRestoreDb').then((r) => {
-      const x = (r && r.result) || {};
-      if (!r.ok || x.ok === false) {
-        noteSet('回填没成：' + ((x && x.err) || r.err || '没回包（sink 没在跑？双击 start-sink.bat）'), 'bad');
-        return;
-      }
-      noteSet('本机库读了 ' + x.rows + ' 行（' + x.handles + ' 人）→ 写回 ' + x.wrote + ' 天、同值跳过 ' + x.same + ' 天' +
-        (x.bad ? '、缺 handle/日期 ' + x.bad + ' 行' : '') +
-        '（一次最多读 ' + x.limit + ' 行，人多/天多就再点一次；同日按列合并，库里空着的列不抹掉已有的数）',
-        x.wrote ? 'ok' : 'warn');
-    }),
+    // v0.12.13：这颗钮随「我的」视图搬进工作台；core 的 impRestoreDb 实现原样保留（工作台调的是同一条命令）。
     vHome: () => setView('home'),
-    vMine: () => setView('mine'),
-    vPlaza: () => setView('plaza'),
-    vFc: () => setView('forecast'),
-    // 切进诊断顺手把「这一眼看见的东西」落一份 kind=debug 进本机日志（下一轮迭代对表用）
-    vDebug: () => { setView('debug'); return cmd('debugRec'); },
+    vFollow: () => setView('follow'),
+    bFollowAll: () => { followAll = !followAll; syncButtons(); render(); },
+    // v0.12.13（art-032）：vMine/vPlaza/vFc/vDebug 随视图搬进工作台；这颗钮开全页工作台（新标签页）。
+    // chrome.tabs.create 是扩展页面开自家页面的正路：不用 window.open（会被当成弹窗）、不需要 manifest 加条目。
+    bWorkbench: () => {
+      try { chrome.tabs.create({ url: chrome.runtime.getURL('ui/dashboard.html') }); }
+      catch (e) { window.open(chrome.runtime.getURL('ui/dashboard.html'), '_blank'); }
+      return Promise.resolve();
+    },
     bRndSet: () => doRndSet(),
     bGoalSet: () => doGoalSet(),
     bOwnSet: () => doOwnSet(),
@@ -1971,7 +1445,19 @@
     vSet: () => { setView('set'); fsRefresh(); return Promise.all([cloudRefresh(), xsRefresh(), libRefresh(), modelRefresh()]); },
   };
   Object.keys(B).forEach((id) => { if (B[id]) { const b = $(id); if (b) b.addEventListener('click', B[id]); } });
-  $('q').addEventListener('keydown', (e) => { if (e && e.key === 'Enter') doQuery(); });
+  // v0.12.9：八颗钮的勾选。change 事件把 {id,on} 发给 core；回话后最好由下一次 state 回写 checked，
+  // 这里不抢着改 DOM（core 可能因为「本机模型闸还关着」等原因不接受，等权威 state 回来才不撒谎）。
+  Array.prototype.forEach.call(document.querySelectorAll('#fabVisGrid input[data-fab]'), (box) => {
+    box.addEventListener('change', () => {
+      const id = box.getAttribute('data-fab');
+      return cmd('setFabVis', { id: id, on: box.checked }).then((r) => {
+        noteSet(r && r.ok ? (box.checked ? '已恢复一颗钮到右缘' : '已摘掉一颗钮（不占位）')
+          : ('这颗钮没改：' + ((r && r.err) || '没回包')), r && r.ok ? 'ok' : 'bad');
+        if (!r || !r.ok) box.checked = !box.checked;   // 失败就弹回去，别让勾选框说谎
+      });
+    });
+  });
+  // v0.12.13：查表输入框（#q）随诊断视图搬进工作台，这条回车接线一并搬走
   $('rndMax').addEventListener('keydown', (e) => { if (e && e.key === 'Enter') doRndSet(); });
   $('rndMax').addEventListener('input', () => { rndDirty = true; });
   $('ownSet').addEventListener('keydown', (e) => { if (e && e.key === 'Enter') doOwnSet(); });
@@ -1998,13 +1484,13 @@
     // 两条弹窗各归各的状态：setModal 看 modalKind，广场作者框看 tlUser。
     // 以前只关前者，于是「三条关法齐」对作者框是空话（docs/UIX.md UIX-19，RL-20 ③ 的那句也一并补齐）。
     if (modalKind) closeModal();
-    else if (tlUser) closeTlUser();
   });
   const extIdBoot = (chrome.runtime && chrome.runtime.id) || '';
   const extLine = $('extIdLine');
   if (extLine) extLine.textContent = extIdBoot ? '扩展 ID ' + extIdBoot + '（装宿主要用它；命令在 ❓ 里）' : '读不到扩展 ID（面板不是扩展页面？）';
   $('tabPick').addEventListener('change', () => { refreshState(); refreshTabs(); });
-  $('whoPick').addEventListener('change', () => { whoSel = $('whoPick').value || ''; return applyWho(); });
+  // v0.12.13：「看谁」下拉随广场搬进工作台（dashboard.js 有自己的 whoPick/seriesView 接线），这条 change 一并搬走
+
 
   refreshTabs();
   refreshState();
@@ -2020,7 +1506,7 @@
   setInterval(() => { if (!document.hidden) refreshTabs(); }, 7000);   // 新开的标签页要能选到
   // 广场的库榜 30 秒刷一次（只在广场且可见时）：每次查询都起一个宿主进程，不能跟着 900ms 轮询走。
   // 顺手回读一次 state：日点表那张仍是浏览器运行态，别让它停在进页那一刻。
-  setInterval(() => { if (!document.hidden && view === 'plaza') { refreshState(); fetchDb(); } }, 30000);
+  setInterval(() => { if (!document.hidden && (view === 'plaza' || view === 'follow')) { refreshState(); fetchDb(); } }, 30000);
   // 共享台账一变就回读一次 state —— 这条不看当前是哪个视图：广场是 30 秒一轮，而冷却只有 60 秒起，
   // 等半分钟才翻红等于没翻。触发点是「别的标签页写下关注」那一瞬，与面板此刻问的是哪个标签页无关
   // （被问的那页可能正在后台被节流，它自己的节拍器根本还没跑）。一次关注会连写两三次，150ms 合成一轮。

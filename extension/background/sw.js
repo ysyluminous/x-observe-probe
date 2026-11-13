@@ -9,6 +9,8 @@
 
   const SINK = ['http://127.0.0.1:8765/', 'http://localhost:8765/'];
   const GUARD_KEY = 'ysy.xprobe.guard', USERS_KEY = 'ysy.xprobe.users', POSTS_KEY = 'ysy.xprobe.posts', RUNS_KEY = 'ysy.xprobe.v1', SERIES_KEY = 'ysy.xprobe.series', QUEUE_KEY = 'ysy.xprobe.queue';
+  // v0.12.4：面板读本机库后落「一人一行」的结论，SW 上送只读这一份，绝不在同步链路里另起一次宿主请求。
+  const FOLLOW_STARTS_KEY = 'ysy.xprobe.followStarts';
   const RUNS_SOFT_BYTES = 2 * 1024 * 1024;   // 与 core 的 RUNS_BYTES_CAP 同值：SW 合并的结果也要吃这个字节顶
   // 待发队列的整键口径，必须与 core.js 的 QUEUE_* 常量逐条同值（自检 [15] 会解析两份源码比对数值）
   const QUEUE_MAX = 120;
@@ -21,7 +23,7 @@
   const SER_MAX = 40;
   const MIN_MAX = 1440;
   const IMP_MAX = 365;
-  const CMDS = ['state', 'collect', 'probe', 'dumpOnce', 'setDump', 'setDumpHtml', 'ping', 'flush', 'clear', 'query', 'stats', 'export', 'rebuild', 'store', 'sample', 'impAdd', 'impDel', 'seriesView', 'impRestoreDb', 'ownSet', 'setDebug', 'setRndMax', 'debugRec', 'goalSet', 'goalNow', 'setBadge', 'setHotBadge', 'setFabRail', 'fabPosReset'];
+  const CMDS = ['state', 'collect', 'probe', 'dumpOnce', 'setDump', 'setDumpHtml', 'ping', 'flush', 'clear', 'query', 'stats', 'export', 'rebuild', 'store', 'sample', 'impAdd', 'impDel', 'seriesView', 'impRestoreDb', 'ownSet', 'setDebug', 'setRndMax', 'debugRec', 'goalSet', 'goalNow', 'setBadge', 'setHotBadge', 'setFabRail', 'setFabVis', 'fabPosReset'];
 
   chrome.runtime.onInstalled.addListener(() => {
     try { chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }); } catch (e) { /* 旧版本没这个 API */ }
@@ -572,13 +574,17 @@
   // 填不进任意地址（v0.10.0 加 dev 这一档是为了让用户拿插件直接打本机正在跑的 boot4，不是开一个可输入的口子）。
   // v0.9.9 从 m. 改到 api2.：真机实测「发验证码」404 —— `m.mingzhang.cc` 是 Next.js 前端，
   // `/api/*` 不在它的 rewrites 里，那条路径回的是 404 的 HTML 页面（不是 JSON）；
-  // 后端（同一个 boot4 应用）挂在 `api2.mingzhang.cc/api` 上，前端自己也是这么调的
+  // v0.12.17 起后端是智枢 Go（前端 zhishu-web 的 /api/xprobe/* 网关转发），boot4 已退役
   // （front/src/lib/config/api.ts 的 api2URL + authService 的 api2Post('/mz/user/sendEmail')）
   // ⇒ 登录、指标上送、标杆推送三条出口同一个域。
-  // dev 那一档读的是 boot4 自己的 application-dev.yml（端口 28081、context-path 是 /），不是猜的。
+  // dev 那一档是本机 zhishu-web dev server（localhost:3100），与线上一样转发到 Go。
+  // v0.12.17（art-035）：boot4（api2 / 28081）整体退役。全插件只有 3 个 baseURL：
+  //   本地 api = http://127.0.0.1:8765（sink）；智枢前端「开发」= http://localhost:3100；
+  //   智枢前端「线上」= https://zhishu.mingzhang.cc —— 后两格都经前端智枢网关转发到同一个 Go。
+  // 上送、读数、登录共用这一处枚举（只有 prod/dev 两个 key，页面拼不出第三个地址）。
   const CLOUD_ENVS = {
-    prod: { label: '线上', base: 'https://api2.mingzhang.cc' },
-    dev: { label: '本机 dev', base: 'http://127.0.0.1:28081' },
+    prod: { label: '线上', base: 'https://zhishu.mingzhang.cc' },
+    dev: { label: '开发', base: 'http://localhost:3100' },
   };
   const CLOUD_ENV_DEF = 'prod';
   const CLOUD_ENV_KEY = 'ysy.xprobe.cloudEnv';
@@ -644,7 +650,20 @@
     });
   }
 
-
+  // ---------- 工作台云端档（v0.12.17）：薄封装 cloud 那套，杜绝第二套枚举/第二本 token 账 ----------
+  // 智枢 Go 认自己 x_observe_token 表里的 token（header token）；登录、上送、读数共用 CLOUD_KEY 里
+  // 按档分格的那把（acct.prod / acct.dev）。boot4 退役后不再有第二把钥匙。
+  function dashConf() {
+    return cloudConf().then((c) => ({
+      env: c.env, label: CLOUD_ENVS[c.env].label, base: c.base, on: !!c.on,
+      logged: !!c.token, email: c.email,
+      // token 只回给本扩展的工作台页面（qRead 与登录弹窗）；页面无远程脚本，明文不出扩展。
+      token: c.token,
+    }));
+  }
+  function dashCall(env, path, token, bodyObj, ms) {
+    return cloudCall(baseOf(env), path, token, bodyObj, ms);
+  }
   // 浏览器 profile 级随机 UUID（非指纹）：云端用它区分「同一用户的第几台设备」，跟 X 账号无关
   function ensureDeviceId() {
     return getKey(DEVICE_KEY).then((v) => {
@@ -848,7 +867,7 @@
   // dayRows = series.imp 全量对账（服务端按 user+device+handle+day 唯一键覆盖）；
   // followEvents = 台账 ev 的增量（服务端按 user+at+dir+target 去重）。台账只留最近 200 条，
   // 所以云端的关注流水从「打开同步」那刻起算，这不是 bug 是台账的边界。
-  function buildCloudPayload(series, guard) {
+  function buildCloudPayload(series, guard, starts) {
     const dayRows = [];
     const src = (series && typeof series === 'object') ? series : {};
     Object.keys(src).forEach((k) => {
@@ -885,7 +904,24 @@
         suspect: e.suspect ? 1 : 0,
       });
     });
-    return { dayRows: dayRows, followEvents: followEvents.length > CLOUD_MAX_EVENTS ? followEvents.slice(-CLOUD_MAX_EVENTS) : followEvents };
+    // v0.12.4「关注时间 / 未回关」：starts 是本机库 follow_starts 白名单聚合的回包（一人一行）。
+    // 判定只在 xprobe_db.py 那条 SQL 里做一次（RL-22），这里只是把同一份结论原样上送，绝不另判一遍。
+    // 四跳同名（RL-26）：at_source / follow_back / suspect 从 SQLite → JS → Go → PG → TS 全程不改名。
+    // 取前 CLOUD_MAX_EVENTS 而不是后：这份名单按「最早主动关注」升序，截尾会把最该看的人丢掉。
+    const startRows = (starts && Array.isArray(starts.rows)) ? starts.rows : [];
+    const followStarts = [];
+    startRows.forEach((r) => {
+      if (!r || !r.handle || !r.follow_at) return;
+      const at = String(r.follow_at);
+      followStarts.push({
+        target: String(r.handle).slice(0, 64), at: at, day: at.slice(0, 10),
+        at_source: String(r.at_source || ''), follow_back: String(r.follow_back || 'unknown'),
+        suspect: r.suspect ? 1 : 0,
+      });
+    });
+    return { dayRows: dayRows,
+      followEvents: followEvents.length > CLOUD_MAX_EVENTS ? followEvents.slice(-CLOUD_MAX_EVENTS) : followEvents,
+      followStarts: followStarts.length > CLOUD_MAX_EVENTS ? followStarts.slice(0, CLOUD_MAX_EVENTS) : followStarts };
   }
   // 云端统一走 httpXhr（不带 cookie、超时可控、回包统一 Result{code,message,data}）。
   // 「这一跳到底撞到什么」必须说准，否则用户只能瞎试（v0.9.8 撞前端 404、v0.9.9 撞 CORS 403，
@@ -974,19 +1010,31 @@
     });
   }
 
+  // v0.12.4「关注时间 / 未回关」：面板把本机库 follow_starts 的结论落进扩展存储，SW 这里只读。
+  // 为什么不在上传时现查库：宿主没装 / 刚起来 / 旧 exe 不认这条查询时，那一跳会挂住整趟同步，
+  // 连 dayRows / followEvents 两条老腿都推不出去（自检 [14] 当场复现过）。判定仍只有库里那一处（RL-22）。
+  function cloudStarts() {
+    return getKey(FOLLOW_STARTS_KEY)
+      .then((v) => (v && Array.isArray(v.rows)) ? v : { rows: [] })
+      .catch(() => ({ rows: [] }));
+  }
+
   function uploadCloudNow() {
     return cloudConf().then((c) => {
       if (!c.on || !c.token) return { ok: false, err: '云端同步没开或这一档还没登录（设置里「运行模式」打开、并在弹窗里登录；换档要重新登录那一档）' };
-      return Promise.all([ensureDeviceId(), getKey(SERIES_KEY), getKey(GUARD_KEY)]).then((all) => {
+      return Promise.all([ensureDeviceId(), getKey(SERIES_KEY), getKey(GUARD_KEY), cloudStarts()]).then((all) => {
         const deviceId = all[0];
         if (!deviceId) return { ok: false, err: 'deviceId 没生成出来（存储写失败？）' };
-        const payload = buildCloudPayload(all[1], all[2]);
-        const stat = { at: Date.now(), env: c.env, base: c.base, dayRows: payload.dayRows.length, followEvents: payload.followEvents.length };
+        const payload = buildCloudPayload(all[1], all[2], all[3]);
+        const stat = { at: Date.now(), env: c.env, base: c.base, dayRows: payload.dayRows.length,
+          followEvents: payload.followEvents.length, followStarts: payload.followStarts.length };
         const putStat = (ok, err, needLogin) => {
           const o = {}; o[CLOUD_STAT_KEY] = Object.assign({}, stat, { ok: !!ok, err: err || '', needLogin: !!needLogin });
           setKey(o);
         };
-        if (!payload.dayRows.length && !payload.followEvents.length) { putStat(true, '还没有可同步的数据'); return { ok: true, empty: true }; }
+        if (!payload.dayRows.length && !payload.followEvents.length && !payload.followStarts.length) {
+          putStat(true, '还没有可同步的数据'); return { ok: true, empty: true };
+        }
         payload.deviceId = deviceId;
         try { payload.ver = String(chrome.runtime.getManifest().version || ''); } catch (e) { payload.ver = ''; }
         try { payload.label = String(navigator.userAgent || '').slice(0, 100); } catch (e) { payload.label = ''; }
@@ -994,7 +1042,8 @@
           putStat(r.ok, r.err, r.needLogin);
           // 把这一趟到底推了几行带回去：v0.10.3 起「登录成功」那一趟要把两条腿各自的结果念给人听，
           // 而 CLOUD_STAT_KEY 是「上一次的结果」，同一刻读它跟读这次的结果是同一份账，不必再绕存储
-          const out = Object.assign({}, r, { dayRows: payload.dayRows.length, followEvents: payload.followEvents.length });
+          const out = Object.assign({}, r, { dayRows: payload.dayRows.length,
+            followEvents: payload.followEvents.length, followStarts: payload.followStarts.length });
           // v0.12.0：服务端明确 persisted=true 且 writeFail=0 才算落库；没确认就一个字节都不从浏览器删
           const d = (r.ok && r.data) ? r.data : {};
           if (d.persisted !== true || Number(d.writeFail || 0) !== 0) return out;
@@ -1014,7 +1063,7 @@
   // 不知道「谁标的、哪台设备标的」；一把钥匙多浏览器共用一行账，谁也说不清这条标杆是谁撤的。
   // 现在这条路与「云端模式」共用同一支登录 token（邮箱验证码换来的 JWT），落到服务端的私有账层
   // ⇒ 「谁的哪台设备在什么时候进/出」有据可查。出口也和登录、指标上送同一个地址（同一台 boot4 应用，
-  // 线上是 api2.mingzhang.cc、本机 dev 是 127.0.0.1:28081，由设置里「云端接口」那一档决定，只有这两档）。
+  // 线上是 zhishu.mingzhang.cc、开发是 localhost:3100，由设置里「云端接口」那一档决定，只有这两档）。
   // 源也换了：不再读视图（bench_accounts / bench_post_rows 天生把 state=0 的人滤掉，推过去永远撤不掉），
   // 改读台账流水 bench_marks_ac / bench_marks_po —— 进/出各一行，游标是本机台账自增 id 而不是时间戳：
   // 换机器、改系统时钟、同一天里两次标记，都不会让水位把中间那批吞掉。
@@ -1667,6 +1716,48 @@
       return true;
     }
     if (msg.t === 'cloudLogout') {
+      cloudConf().then((c) => cloudWrite({ env: c.env, on: false, acct: null })).then(() => sendResponse({ ok: true }));
+      return true;
+    }
+    // ---------- v0.12.15 工作台云端档命令（地址只认这两格枚举；页面发不出第三个地址） ----------
+    if (msg.t === 'dashConf') {
+      dashConf().then((c) => sendResponse(Object.assign({ ok: true }, c)));
+      return true;
+    }
+    if (msg.t === 'dashEnvSet') {
+      const want = String((msg && msg.env) || '');
+      if (!CLOUD_ENVS[want]) {
+        sendResponse({ ok: false, err: '工作台云端只有 ' + Object.keys(CLOUD_ENVS).join(' / ') + ' 两档（地址写死在代码里，填不进别的地址）' });
+        return;
+      }
+      const o = {}; o[CLOUD_ENV_KEY] = want;
+      setKey(o).then(() => dashConf()).then((c) => sendResponse(Object.assign({ ok: true }, c)));
+      return true;
+    }
+    if (msg.t === 'dashSendCode') {
+      const email = String((msg && msg.email) || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { sendResponse({ ok: false, err: '邮箱格式不对' }); return; }
+      cloudPost('/api/mz/user/sendEmail', '', { email: email }).then(sendResponse);
+      return true;
+    }
+    if (msg.t === 'dashLogin') {
+      const email = String((msg && msg.email) || '').trim();
+      const code = String((msg && msg.code) || '').trim();
+      cloudPost('/api/mz/user/codeLogin', '', { email: email, code: code }).then((r) => {
+        if (!r.ok) { sendResponse(r); return; }
+        const u = (r.data && r.data.user) || {};
+        // 与面板「运行模式」同一本账：cloudWrite 按当前档落 token；随后 cloudLogin 首推那四条腿
+        // （ingest / bench / library / block）会把本机 xprobe.db 的存量全量推进智枢 PG。
+        cloudEnv().then((env) => cloudWrite({ env: env, on: true,
+          acct: { token: String((r.data && r.data.token) || ''), email: email, userId: String(u.id || '') } })
+          .then(() => Promise.all([uploadCloudNow(), xsyncRun(), libSyncRun({ batches: LIB_MANUAL_BATCHES }),
+            blockSyncRun({ batches: 40 })]).then((four) =>
+            sendResponse({ ok: true, email: email, env: env,
+              firstPush: { metrics: four[0], bench: four[1], library: four[2], block: four[3] } }))));
+      });
+      return true;
+    }
+    if (msg.t === 'dashLogout') {
       cloudConf().then((c) => cloudWrite({ env: c.env, on: false, acct: null })).then(() => sendResponse({ ok: true }));
       return true;
     }

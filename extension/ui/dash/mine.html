@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>X 观测探针 · 工作台 · 我的</title>
+<link rel="stylesheet" href="../sidepanel.css">
+<link rel="stylesheet" href="../dashboard.css">
+</head>
+<body class="dash">
+<header id="dashHead">
+  <div id="dTitle">X 观测探针 · 工作台</div>
+  <select id="whoPick" class="hide" title="选谁就在下面看谁、编辑谁（默认不选 = 只看排名；只影响广场页）"><option value="">（看谁）</option></select>
+  <span id="dHeadGap"></span>
+  <span id="dLamp">?</span>
+  <span id="dUpdatedAt"></span>
+  <button id="dRefresh" type="button" title="重读 state 与数据源（也各有一个定时器在跑，这是手动补一趟）">刷新</button>
+</header>
+<div id="dErr"></div>
+<nav id="dKpis" aria-label="概览数字（口径见悬浮与脚注）"></nav>
+<nav id="dTabs" role="tablist" aria-label="工作台页签（本页打开）"></nav>
+<main id="report"></main>
+<footer id="dFoot"></footer>
+<script src="../kit.js"></script>
+<script src="../view.js"></script>
+<script src="../dashboard.js"></script>
+<script src="page-mine.js"></script>
+</body>
+</html>

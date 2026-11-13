@@ -795,6 +795,86 @@ def leg_sync(xdb, tmp):
         ck("同步自检结束后换回主临时库", False, xdb._DB["err"])
 
 
+def leg_follow_starts(xdb, tmp):
+    print("\n[A4c] v0.12.4 关注时间/未回关：follow_starts 一人一行 + 历史首条 + 三态 + 估值固化")
+    if not xdb.open_db(tmp / "follow-xprobe.db"):
+        ck("关注名单自检临时库打不开", False, xdb._DB["err"])
+        return
+    conn = xdb._DB["conn"]
+    # 同一人两次关注：只该认最早那条；大写 handle 要归一；unfollow 与空 handle 不许入名单。
+    ev = [
+        ("e1", "2026-10-01T08:00:00.000Z", "alice", "follow", 0),
+        ("e2", "2026-11-01T08:00:00.000Z", "alice", "follow", 0),
+        ("e3", "2026-09-20T08:00:00.000Z", "bob", "follow", 1),
+        ("e4", "2026-10-10T08:00:00.000Z", "carol", "unfollow", 0),
+        ("e5", "2026-08-05T08:00:00.000Z", "Dave", "follow", 0),
+        ("e6", "2026-07-01T08:00:00.000Z", "", "follow", 0),
+    ]
+    for k, at, h, d, sp in ev:
+        conn.execute("INSERT INTO follow_events(key, at, day, handle, dir, suspect)"
+                     " VALUES(?, ?, ?, ?, ?, ?)", (k, at, at[:10], h, d, sp))
+    # seen_as 是 _j() 落的 JSON 字符串；alice 两行取最新那行（有 followers ⇒ 已回关）。
+    us = [
+        ("u1", "2026-09-01T00:00:00.000Z", "alice", "", 0, "{}"),
+        ("u2", "2026-11-02T00:00:00.000Z", "alice", "following", 0,
+         '{"following":"2026-09-01","followers":"2026-11-02"}'),
+        ("u3", "2026-09-19T00:00:00.000Z", "bob", "following", 0,
+         '{"following":"2026-09-19"}'),
+        ("u4", "2026-08-04T00:00:00.000Z", "dave", "", 0, "{}"),
+        ("u5", "2026-06-01T00:00:00.000Z", "erin", "following", 0,
+         '{"following":"2026-06-01"}'),
+        ("u6", "2026-06-01T00:00:00.000Z", "selfacct", "following", 1,
+         '{"following":"2026-06-01"}'),
+    ]
+    for k, at, h, rel, own, sa in us:
+        conn.execute("INSERT INTO store_users(key, at, handle, relation, own, seen_as)"
+                     " VALUES(?, ?, ?, ?, ?, ?)", (k, at, h, rel, own, sa))
+    conn.commit()
+    r = xdb.query("follow_starts", 50)
+    rows = r.get("rows", [])
+    by = {x["handle"]: x for x in rows}
+    ck("查询本身跑通、一人一行、空 handle 与 unfollow 不入、大写 handle 归一",
+       r["ok"] is True and len(rows) == 4 and len(by) == 4
+       and "carol" not in by and "" not in by and "dave" in by and "Dave" not in by,
+       [(x["handle"], x["follow_at"], x["at_source"], x["follow_back"]) for x in rows])
+    ck("每人历史首条：alice 两次关注只认 10-01，不是 11-01（不是每人最新）",
+       by.get("alice", {}).get("follow_at") == "2026-10-01T08:00:00.000Z",
+       by.get("alice", {}).get("follow_at"))
+    ck("真实事件组按关注时间升序在前，估值组垫底（最早主动关注排最前）",
+       [x["handle"] for x in rows] == ["dave", "bob", "alice", "erin"],
+       [x["handle"] for x in rows])
+    ck("三态：进过粉丝列表=已回关 / 进过关注列表且本机刷过粉丝列表=明确未回关 / 没凭据=未知",
+       by.get("alice", {}).get("follow_back") == "yes"
+       and by.get("bob", {}).get("follow_back") == "no"
+       and by.get("dave", {}).get("follow_back") == "unknown",
+       {k: by.get(k, {}).get("follow_back") for k in ("alice", "bob", "dave", "erin")})
+    ck("suspect=1 保留但带标记（不删行、不洗白）",
+       by.get("bob", {}).get("suspect") == 1 and by.get("alice", {}).get("suspect") == 0,
+       {k: by.get(k, {}).get("suspect") for k in ("alice", "bob")})
+    ck("没有真实动作的存量：用第一次见到的固化时刻、标 estimated、绝不冒充 event",
+       by.get("erin", {}).get("at_source") == "estimated"
+       and by.get("erin", {}).get("follow_at") == "2026-06-01T00:00:00.000Z"
+       and all(x["at_source"] == "event" for x in rows if x["handle"] != "erin"),
+       [(x["handle"], x["at_source"], x["follow_at"]) for x in rows])
+    ck("own=1 的自己不进名单；只补「确实关注过」的存量（没关注的台账账号不冒出来）",
+       "selfacct" not in by and len(rows) == 4, sorted(by))
+    # 反向对照：抹掉 alice 的回关证据，她必须退回 unknown —— 证明 yes 来自凭据而不是硬编码。
+    conn.execute("UPDATE store_users SET seen_as = ? WHERE key = 'u2'",
+                 ('{"following":"2026-09-01"}',))
+    conn.commit()
+    r2 = xdb.query("follow_starts", 50)
+    by2 = {x["handle"]: x for x in r2.get("rows", [])}
+    ck("反向对照：撤掉回关证据 ⇒ alice 从 yes 退成 no（有全局粉丝列表证据）或 unknown，绝不仍是 yes",
+       by2.get("alice", {}).get("follow_back") in ("no", "unknown")
+       and by2.get("alice", {}).get("follow_back") != "yes",
+       by2.get("alice", {}).get("follow_back"))
+    ck("白名单形状：一个占位符、help 里露得出名字、且只读不改库",
+       xdb.QUERIES["follow_starts"].count("?") == 1
+       and "follow_starts" in [x["name"] for x in xdb.query("help", 50)["rows"]]
+       and xdb.QUERIES["follow_starts"].lstrip().upper().startswith("WITH"),
+       [xdb.QUERIES["follow_starts"].count("?"), xdb.QUERIES["follow_starts"][:20]])
+
+
 def leg_lib(xdb, tmp):
     print("\n[A4b] v0.10.6 抓取档案上云：lib_users / lib_posts 两条增量查询（按业务键去重 + after 游标）")
     if not xdb.open_db(tmp / "lib-xprobe.db"):
@@ -1507,6 +1587,28 @@ FS_PORT = 8792
 FS_BASE = "http://127.0.0.1:%d" % FS_PORT
 
 
+def leg_parity(xdb):
+    """[P] DB-PARITY 结构对照表（v0.12.19 决策3A / RL-35）：x_observe_* 结构的单一事实源。
+    不连 PG、只解析 skills/docs/DB-PARITY.md，断言 5 张表段都在、PG 列非空、且点名
+    「本地 day_rows 无 user_id 列、user_id 由 Go 注入」这一关键认知（防误建同构表）。"""
+    parity = (HERE / "skills" / "docs" / "DB-PARITY.md").read_text(encoding="utf-8")
+    ck("DB-PARITY 含 5 张 x_observe 表段（account/day_row/follow_event/follow_start/post）",
+       parity.count("## 表：x_observe_") >= 5, parity.count("## 表：x_observe_"))
+    for tbl in ("x_observe_account", "x_observe_day_row", "x_observe_follow_event",
+                "x_observe_follow_start", "x_observe_post"):
+        sec = re.search(r"## 表：" + re.escape(tbl) + r"\n(.*?)(?=\n## 表：|\Z)", parity, re.S)
+        ck("DB-PARITY 段存在：" + tbl, bool(sec), tbl)
+        if not sec:
+            continue
+        pg = re.search(r"PG 列:\s*(.+)", sec.group(1))
+        ck("DB-PARITY " + tbl + " 列出非空 PG 列", bool(pg) and len([c for c in pg.group(1).split(",") if c.strip()]) >= 3,
+           (pg.group(1)[:60] if pg else ""))
+    ck("DB-PARITY 点名「本地 day_rows 没有 user_id 列」（RL-35 关键认知：防把 push 注入误读成建同构表）",
+       "本地 day_rows 没有 user_id 列" in parity, "")
+    ck("DB-PARITY 点名「user_id 由 Go 注入 / 本地不建 user_id 列」",
+       "user_id 由 Go" in parity and "本地不建" in parity, "")
+
+
 def leg_fs(tmp):
     """[F] 本机文件与清理（v0.8.8）：占用测量 + 按保留天数删除，先单元后腿端到端。
     为什么这条腿必须存在：删除是本项目唯一一件做错了回不来的动作，而它的开关装在浏览器里
@@ -1775,11 +1877,13 @@ def main() -> int:
         leg_tl(xdb, tmp)
         leg_win(xdb, tmp)
         leg_sync(xdb, tmp)
+        leg_follow_starts(xdb, tmp)
         leg_lib(xdb, tmp)
         leg_block(xdb, tmp)
         leg_purge(xdb, tmp)
         leg_http(xdb, tmp, a.logs)
         leg_native(tmp)
+        leg_parity(xdb)
         leg_fs(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

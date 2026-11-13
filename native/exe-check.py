@@ -214,7 +214,7 @@ def main() -> int:
         b = h.body({"t": "ping"})
         ck("ping 回来的 dir 是临时目录（绝不写进真库）",
            str(Path(str(b.get("dir", ""))).resolve()), str(data.resolve()))
-        ck("ping 自报 sink-18（exe 里那份 log-sink.py 是最新的；18 起 /db 认 after 游标，标杆同步走的就是这条腿）", b.get("sink"), "sink-18")
+        ck("ping 自报 sink-19（exe 里那份 log-sink.py 是最新的；19 起 POST /api/xprobe/* 同形读口，工作台云端档对齐一版）", b.get("sink"), "sink-19")
         ck("ping 报的库版本是 db-10（v0.11.0：多 block_marks / block_stat 两条拉黑上云查询；v0.11.5 短暂的 db-11 随 v0.11.6 撤）", (b.get("db") or {}).get("dbVer"), "db-10")
 
         print("[2] v0.9.0 的新查询 bench_accounts（旧 exe 会回「未知查询」）")
@@ -333,6 +333,25 @@ def main() -> int:
         bafter = h.body({"t": "db", "q": "block_marks", "after": brows[-1]["id"], "limit": 50})
         ck("block_marks 的 after 游标在 exe 里真绑进 SQL：给到最大 id 就 0 行（空页不是错）",
            [bafter.get("ok"), len(bafter.get("rows") or [])], [True, 0])
+
+        print("[4e] v0.12.4 关注时间/未回关：follow_starts 白名单聚合走 exe（旧 exe 回「未知查询」）")
+        # 只量源码查不出漏打包：装进 Chrome 的是 exe，白名单查询少一条时面板那格就一直「没回包」。
+        for i, (hh, sp) in enumerate((("execheck_fs_a", 0), ("execheck_fs_a", 0), ("execheck_fs_b", 1))):
+            fe = {"kind": "follow", "at": iso(now + timedelta(seconds=101 + i)),
+                  "receivedAt": iso(now), "url": "https://x.com/home", "ver": "exe-check", "host": "exe",
+                  "data": {"handle": hh, "dir": "follow", "suspect": sp}}
+            b = h.body({"t": "log", "body": json.dumps(fe, ensure_ascii=False)})
+            ck("关注动作入库（同一人两次、另一人带 suspect）", [b.get("ok"), b.get("stored")], [True, 1])
+        fs = h.body({"t": "db", "q": "follow_starts", "limit": 50})
+        frows = [x for x in (fs.get("rows") or []) if str(x.get("handle", "")).startswith("execheck_fs")]
+        ck("exe 里 follow_starts 可用：两人各一行、都标 event（旧 exe 这里 ok=False）",
+           [fs.get("ok"), len(frows), sorted(str(x.get("at_source")) for x in frows)],
+           [True, 2, ["event", "event"]])
+        ck("exe 回包四跳同名：at_source / follow_back / suspect 三列都在",
+           [all(k in (frows[0] if frows else {}) for k in ("at_source", "follow_back", "suspect")),
+            sorted(int(x.get("suspect") or 0) for x in frows)], [True, [0, 1]])
+        ck("反向对照：未知查询仍被白名单挡住（新加一条没把白名单放成任意 SQL）",
+           h.body({"t": "db", "q": "follow_starts__not_exist", "limit": 5}).get("ok"), False)
 
         print("[5b] v0.11.4 本机模型通道（llm）在 exe 里真在")
         # 为什么要在打包版上再钉一遍：db-selftest 的 [E] 起的是**源码**宿主，那份永远带 llm；

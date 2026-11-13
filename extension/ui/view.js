@@ -1066,8 +1066,16 @@
       cols: o.cols, labels: o.labels, sortBy: o.sortBy,
       rows: o.rows || [], empty: o.empty || '', note: o.note || '',
       more: o.more || 0,
+      // 2026-11-13：标题与副信息分家（工作台卡片头左标题右副信息；面板窄则副信息另起一行）
+      capMeta: o.capMeta || '',
       // 只有 cls:'tl' 的榜用：卡片数组（cards，sidepanel 画卡片不吃 head/rows）+ 日期下拉（days/day）与来源筛选（srcf）+ 排序键（sort）
-      cards: o.cards || [], sort: o.sort || '',
+      // 2026-11-13 修：这里原来写的是 `o.cards || []` —— **空数组是 truthy**，
+      // 于是账号榜/帖子榜（不传 cards）也带着 cards:[] 进 kit.js 的 gridNode，
+      // 被 `if (m.cards)` 判成「卡片榜」→ 走卡片分支 → head/rows 一行都不画，
+      // 只剩一句「云端库里还没有…」（被 CSS 截成「云端库…」）。数据明明读回来了（状态行写着
+      // 「读回 账号 50 人 / 帖子 50 条」），页面却是空的 —— 这就是广场一直不出表的真因。
+      // 修法：不给 cards 就给 null（falsy），卡片榜才走卡片分支；tl 榜照旧（它传的是真数组）。
+      cards: o.cards || null, sort: o.sort || '',
       days: o.days || [], day: o.day || '', srcf: o.srcf || '',
     };
   }
@@ -1075,6 +1083,7 @@
   // 分页（v0.8.1-t 用户裁定）：一次 10 条，「更多」按钮在 sidepanel（limit 由面板模块变量递增加进来）；
   // limit 不传 = 全量（老调用/自测不受影响），面板恒传当前已展开数。
   function acctTable(db, by, now, limit) {
+    var isCloud = !!(db && db.via === 'cloud');
     var key = ACCT_SORT.indexOf(by) >= 0 ? by : 'views';
     var t = now == null ? Date.now() : now;
     var list = acctRows(db, key);
@@ -1110,14 +1119,18 @@
       cols: [null, null, null, 'views', 'eng', null, 'fans', 'posts'],
       labels: ACCT_LABEL,
       more: more,
-      title: '账号排名 · 按' + ACCT_LABEL[key] + '降序（点列头换排序）· 本次读回 ' + list.length + ' 人' +
-        (more > 0 ? '，榜先出前 ' + shown.length + '（「更多」每次 +10）' : ''),
-      empty: '本机库里还没有账号行：时间线/主页采几页就会自动进去（库是唯一真身，面板只读）',
+      title: '账号排名 · 按' + ACCT_LABEL[key] + '降序（点列头换排序）',
+      capMeta: '本次读回 ' + list.length + ' 人' +
+        (more > 0 ? ' · 榜先出前 ' + shown.length + '（更多每次 +10）' : ''),
+      empty: isCloud
+        ? '云端库里还没有账号数据：这些账号要在时间线/主页被采集后才会进智枢库（线上 PG）'
+        : '本机库里还没有账号行：时间线/主页采几页就会自动进去（库是唯一真身，面板只读）',
       note: '帖数 = 主页头部自报的帖子总数（带 ~ 的是还没采到总数、用已抓到的条数兜底）；曝光是「已抓到帖子的曝光合计」，与奖励页那个账号曝光不是一个口径；互动率 = 互动/曝光。',
       rows: rows,
     });
   }
   function postTable(db, by, now, limit) {
+    var isCloud = !!(db && db.via === 'cloud');
     var key = POST_SORT.indexOf(by) >= 0 ? by : 'view';
     var t = now == null ? Date.now() : now;
     var list = postRows(db, key);
@@ -1149,9 +1162,12 @@
       cols: [null, null, null, 'view', 'growth'],
       labels: POST_LABEL,
       more: more,
-      title: '帖子排名 · 按' + POST_LABEL[key] + '降序（点列头换排序）· 一条帖子一行，共 ' + list.length + ' 条' +
-        (more > 0 ? '，榜先出前 ' + shown.length + '（「更多」每次 +10）' : ''),
-      empty: '本机库里还没有帖子：时间线或详情页采一次就会按 tweet_id 归并进来',
+      title: '帖子排名 · 按' + POST_LABEL[key] + '降序（点列头换排序）',
+      capMeta: '一条帖子一行，共 ' + list.length + ' 条' +
+        (more > 0 ? ' · 榜先出前 ' + shown.length + '（更多每次 +10）' : ''),
+      empty: isCloud
+        ? '云端库里还没有帖子数据：帖子要在时间线或详情页被采集后才会进智枢库（线上 PG）'
+        : '本机库里还没有帖子：时间线或详情页采一次就会按 tweet_id 归并进来',
       note: '每帖取最新一点；每小时增长 =（最新−首次曝光）/ 相隔小时，只有一个采样点时是「—」不是 0。',
       rows: rows,
     });
@@ -1285,32 +1301,58 @@
     return out;
   }
   // 库没通时明说「读不到」和怎么修（扩展 ID 用来装原生宿主），不让一张空表冒充「没有数据」
-  function dbStateRow(db, now) {
+  function dbStateRowRaw(db, now) {
     var id = (db && db.id) || '';
-    var remedy = '广场的两张榜直接读本机档案库 xprobe.db（Chrome 扩展不能直接开 SQLite，只能经原生宿主或本机 sink）。\n' +
+    var isCloud = !!(db && db.via === 'cloud');
+    var srcLabel = isCloud ? '云端（智枢）' : '本机库 xprobe.db';
+    var remedyLocal = '广场的两张榜直接读本机档案库 xprobe.db（Chrome 扩展不能直接开 SQLite，只能经原生宿主或本机 sink）。\n' +
       '装一次原生宿主（之后不用再开 bat）：\n  py -3 native\\install-host.py --ext-id ' + (id || '<扩展ID>') + '\n' +
       '不装也行：双击 start-sink.bat 走 HTTP 回退，读的是同一份库。\n' +
       '扩展 ID 也能在 chrome://extensions 的详情里看到。';
-    if (!db) return row('本机库 xprobe.db', '正在读…（账号 + 帖子两条白名单查询）', 'warn', remedy);
+    var remedyCloud = '云端档读的是智枢线上 PG（前端智枢网关转发到 Go）。读不到先确认：①这一档已登录（右上角「登录」）；②网关 localhost:3100（开发）或 zhishu.mingzhang.cc（线上）在跑。';
+    var remedy = isCloud ? remedyCloud : remedyLocal;
+    if (!db) return row(srcLabel, '正在读…（账号 + 帖子两条查询）', 'warn', remedy);
     var a = db.acct || {}, p = db.post || {};
-    var via = db.via === 'native' ? 'Native' : (db.via === 'http' ? 'HTTP' : '未定');
+    var raw = String((!a.ok ? a.err : '') || (p.err || '') || '');
+    // v0.12.18（真机 2026-11-13）：诊断按「哪一层断了」分家，不再一刀切。
+    // 云端档 fetch 失败同样写着 "Failed to fetch"，旧版一律报「宿主未注册 + sink 未启动」，
+    // 把人往完全相反的方向引（宿主当时其实在写库）；8765 被别的服务占了回的 "Not Found"
+    // 也会被旧正则吞成同一句。只有真的两条本机通道都没应答时，才说那句话。
+    var cloudFail = /云端|zhishu\.mingzhang\.cc|localhost:3100|127\.0\.0\.1:8080/i.test(raw);
+    var portFail = /回包不是 JSON|回来的不是 JSON|unknown path/i.test(raw);
+    var slowFail = /8 秒没回|超时|timeout/i.test(raw);
+    var via = db.via === 'native' ? 'Native' : (db.via === 'http' ? 'HTTP'
+      : (db.via === 'cloud' || cloudFail ? '云端' : '未定'));
     if (!a.ok || !p.ok) {
+      // 两波读取：第一波账号先出、帖子榜还在加载（err 标记「加载中」），此时不该报红灯
+      if ((!a.ok && /加载中/.test(a.err || '')) || (!p.ok && /加载中/.test(p.err || ''))) {
+        return row(srcLabel, '加载中…（账号/帖子榜读取中）', 'warn', remedy);
+      }
       var err = (!a.ok ? '账号 ' + clip(a.err || '?', 34) : '') +
         (!p.ok ? (a.ok ? '' : ' · ') + '帖子 ' + clip(p.err || '?', 34) : '');
-      // 两条路都没通时别只把 fetch 的原文端给用户：「Failed to fetch」既不说哪里断了，也不说怎么办。
-      // 原生宿主没注册 + sink 没开，在面板上就是同一句话 —— 点名两者，修法放悬停里。
       var down = /Failed to fetch|native messaging host|Native host has exited|not found/i;
-      var both = (!a.ok && down.test(a.err || '')) || (!p.ok && down.test(p.err || ''));
-      if (both) err = '两个通道都没通（宿主未注册 + sink 未启动）';
-      return row('本机库 xprobe.db', '读不到 · ' + err + ' · 通道 ' + via, 'bad',
+      var both = !cloudFail && !portFail && !slowFail &&
+        ((!a.ok && down.test(a.err || '')) || (!p.ok && down.test(p.err || '')));
+      if (cloudFail) err = '云端档没连上（' + clip(raw, 62) + '）—— 本机宿主/sink 与这趟无关';
+      else if (portFail) err = '本机 8765 回的不是探针 sink（端口被别的服务占了，或 sink 版本旧）：' + clip(raw, 44);
+      else if (slowFail) err = clip(raw, 62) + (isCloud ? '（云端读口慢，不是通道断）' : '（本机库聚合视图慢，不是通道断）');
+      else if (both) err = '两个通道都没通（宿主未注册 + sink 未启动）';
+      return row(srcLabel, '读不到 · ' + err + ' · 通道 ' + via, 'bad',
         remedy + '\n最近一次原始报错：' + clip((!a.ok ? a.err : '') || (p.err || ''), 90) +
         (db.native && db.native.ok === false && db.native.err ? '\n宿主最近一次报错：' + clip(db.native.err, 90) : ''));
     }
     var ms = Number(db.ms) || 0;
-    return row('本机库 xprobe.db', '通道 ' + via + ' · 读回 账号 ' + (a.rows || []).length + ' 人 / 帖子 ' +
+    return row(srcLabel, '通道 ' + via + ' · 读回 账号 ' + (a.rows || []).length + ' 人 / 帖子 ' +
       (p.rows || []).length + ' 条 · ' + (ms ? ms + 'ms · ' : '') + '读于 ' + hmOf(db.at || now || Date.now()), 'ok',
-      '进广场时读一次，之后每 30 秒（或点「重读库」）：账号取互动前 500，帖子按曝光/增速各取前 200 再并成一份。\n' +
-      '只读：面板不往库里写任何东西；补录/改数仍写浏览器那张日点表。\n' + remedy);
+      '进广场会自动读，之后每 30 秒（或点「重读库」）刷新；只读：本页不往库里写任何东西。\n' + remedy);
+  }
+
+  // 2026-11-13：通道状态行单独一个 class（工作台里给它一条横幅皮肤：body.dash .row.dChan）。
+  // D-9：这一行必须一眼看清「当下这一个数 + 它是哪一档」——工作台里它不是普通行，是状态条。
+  function dbStateRow(db, now) {
+    var r = dbStateRowRaw(db, now);
+    if (r) r.cls = 'dChan';
+    return r;
   }
 
   // 广场：本机库两张榜（账号 / 帖子）+ 建议名单打头；选中某个人时再挂一张他的日点表。
@@ -1326,17 +1368,31 @@
     if (db && db.acct && db.acct.ok && db.post && db.post.ok) dbSuggestLines(db).forEach(function (m) { out.push(m); });
     // v0.8.2 时间线曝光排序：库通了才有（tl 查询失败要点名原因，不静默吞）
     if (db && db.tl && db.tl.ok) out.push(tlTable(db, { srcf: o.tlSrcf, day: o.tlDay, now: o.now, limit: o.tlLimit, sort: o.tlSort }));
-    else if (db && db.tl && !db.tl.ok) out.push(row('时间线曝光排序', '查询失败：' + (db.tl.err || '没回包'), 'bad',
-      '宿主/sink 太旧（要 db-5 + sink-14）或库没起来都会这样；两张榜能出而这张不能时，优先怀疑版本'));
+    else if (db && db.tl && !db.tl.ok) {
+      var tlErr = db.tl.err || '没回包';
+      // 决策3C（v0.12.19）：云端档点名差异（PG 未存对应序列/分源）是「已知差异」——不是故障，别用红色「查询失败」吓人。
+      // 只有真·查询失败（宿主/sink 版本旧、库没起来）才标红。
+      if (db.via === 'cloud' && /云端不采集/.test(tlErr)) {
+        out.push(row('时间线曝光排序', tlErr, '',
+          '云端档的已知差异：线上 PG 没存时间线分源榜单，所以这张榜在云端档不出现（本地库档能看到）。这不是故障，也不是网络断了，刷新没用。'));
+      } else {
+        out.push(row('时间线曝光排序', '查询失败：' + tlErr, 'bad',
+          '宿主/sink 太旧（要 db-5 + sink-14）或库没起来都会这样；两张榜能出而这张不能时，优先怀疑版本'));
+      }
+    }
     // 库没打通就退回浏览器运行态那套「每人最新一行」：至少不白屏，但也别让它冒充库里的账
     if (!db || !db.acct || !db.acct.ok) {
       out.push(rankNode(st, o.by, o.asc, o.now, o.rankLimit));
       out.push(line('上面这张是浏览器运行态的备用排名（库读不到时才出现）：一人一行 = 他「最新的那一天」的四列。\n' +
         '库通了之后这一张会换成两张榜（账号 / 帖子），数据来自全部已抓到的记录。'));
     } else {
-      out.push(line('口径：两张榜都来自本机档案库 xprobe.db（全部已抓到的帖子与日点），不是浏览器里那点运行态。\n' +
-        '「账号」那列的曝光 = 这人已抓到帖子的曝光合计；「帖子」是一条帖子一行、取每帖最新一点。\n' +
-        '下面那张日点表仍来自浏览器运行态：补录/改数只改面板这张表，不改库。'));
+      var isCloud = !!(db && db.via === 'cloud');
+      out.push(line(isCloud
+        ? '口径：两张榜都来自云端智枢库（线上 PG，全站已采集的帖子与账号；账号按曝光/粉丝、帖子按曝光降序）。\n' +
+          '下面那张日点表仍来自浏览器运行态：补录/改数只改面板这张表，不改云端库。'
+        : '口径：两张榜都来自本机档案库 xprobe.db（全部已抓到的帖子与日点），不是浏览器里那点运行态。\n' +
+          '「账号」那列的曝光 = 这人已抓到帖子的曝光合计；「帖子」是一条帖子一行、取每帖最新一点。\n' +
+          '下面那张日点表仍来自浏览器运行态：补录/改数只改面板这张表，不改库。'));
     }
     var who = s.key || '';
     if (!who || who === s.own) {
@@ -1367,8 +1423,62 @@
       (r.posts.map(postLine).join('\n') || '(没有匹配的帖子)') + '\n库：users ' + r.counts.users + ' / posts ' + r.counts.posts)];
   }
 
+  // ---------- v0.12.4「关注时间 / 未回关」显示层 ----------
+  // 判定**不在这里**：三态、历史首条、估值来源全在 xprobe_db.py 的 follow_starts 白名单 SQL 里定死
+  //（RL-22 唯一写者）。这一层只把同一份结论排成文字，免得本机面板与云端各写一套判据。
+  // 默认折起「已回关」= 用户要的「最早主动关注但没回关我的人」；「未知」照决策 2 必须看得见。
+  // at_source='estimated' 的行标「估」：那是第一次见到 TA 的固化时刻，不冒充真实关注动作（RL-11）。
+  var FB_LABEL = { yes: '已回关', no: '明确未回关', unknown: '未知' };
+  function followBackRows(rows, opts) {
+    var o = opts || {}, now = o.now || Date.now(), all = !!o.all;
+    var src = Array.isArray(rows) ? rows : [];
+    var out = [];
+    src.forEach(function (r) {
+      if (!r || !r.handle) return;
+      var fb = FB_LABEL[r.follow_back] ? r.follow_back : 'unknown';
+      if (!all && fb === 'yes') return;
+      var ms = Date.parse(r.follow_at || '') || 0;
+      var days = ms ? Math.max(0, Math.floor((now - ms) / 86400000)) : null;
+      var est = r.at_source === 'estimated';
+      var txt = '@' + r.handle +
+        '  ' + (r.follow_at ? String(r.follow_at).slice(0, 10) : '时间未知') + (est ? '（估）' : '') +
+        '  关注 ' + (days == null ? '—' : days + ' 天') +
+        '  ' + FB_LABEL[fb] +
+        (r.suspect ? '  ⚠可疑' : '');
+      out.push({ handle: r.handle, follow_at: r.follow_at || '', at_source: r.at_source || '',
+        follow_back: fb, suspect: !!r.suspect, days: days, text: txt });
+    });
+    // 调用方（SQL）本来就排好了；这里再排一次是防御：换了数据源也不许把「估」插到真实事件前面。
+    out.sort(function (a, b) {
+      var ae = a.at_source === 'estimated' ? 1 : 0, be = b.at_source === 'estimated' ? 1 : 0;
+      if (ae !== be) return ae - be;
+      var at = a.follow_at || '9999', bt = b.follow_at || '9999';
+      if (at !== bt) return at < bt ? -1 : 1;
+      return a.handle < b.handle ? -1 : (a.handle > b.handle ? 1 : 0);
+    });
+    return out;
+  }
+  function followBackLines(st, opts) {
+    var o = opts || {};
+    var box = (o.db && o.db.followStarts) || {};
+    var rows = Array.isArray(box.rows) ? box.rows : [];
+    var list = followBackRows(rows, o);
+    var out = [line('最早主动关注 · 未回关（列出 ' + list.length + ' 人' +
+      (o.all ? '，含已回关' : '，已回关已折起') + '）')];
+    if (!box.ok) {
+      out.push(line('本机库这一条没读到：' + (box.err || '没回包') +
+        '\n先确认宿主 / sink 在跑（或点「重读库」）；闸门不执行面板，这一格要真机走查。'));
+      return out;
+    }
+    out.push(line('口径：每人「历史首条」主动关注动作（取关后重新关注仍算最早那次）；没有真实动作的存量用第一次见到 TA 的固化时刻并标「估」，写一次不再变、不冒充真实时间。三态「已回关 / 明确未回关 / 未知」默认未知，不主动探测，只有手动刷到该账号、本机被动观测到证据才更新。可疑动作保留但带标记。'));
+    if (!list.length) { out.push(line('（名单为空：本机还没有关注动作，或所有人都已回关）')); return out; }
+    list.forEach(function (r) { out.push(line(r.text)); });
+    return out;
+  }
+
   globalThis.XPROBE_VIEW = {
     homeLines: homeLines, debugLines: debugLines, queryLines: queryLines,
+    followBackRows: followBackRows, followBackLines: followBackLines, FB_LABEL: FB_LABEL,
     mineLines: mineLines, plazaLines: plazaLines, DAY_HEAD: DAY_HEAD,
     fansForecastCalc: fansForecastCalc, effForecastCalc: effForecastCalc, fansForecastLines: fansForecastLines,
     mineDigestText: mineDigestText, mineReportText: mineReportText,

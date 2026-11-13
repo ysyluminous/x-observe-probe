@@ -7,9 +7,9 @@
 // 页面里我只留一个节点（右下角浮标），详面板搬到扩展自己的 Side Panel ⇒ 注入节点归零是这次换壳的真收益。
 (function () {
   'use strict';
-  const VER = '0.12.3';
+  const VER = '0.12.21';
 
-  const BUILD = '2026-11-11-c';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
+  const BUILD = '2026-11-13-e';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
   const SINK = 'http://127.0.0.1:8765';
   const STORE_KEY = 'ysy.xprobe.v1';
   // 浏览器这边只留「运行态」，整页原文的去处是本机 xprobe.db（sink-9）。
@@ -184,6 +184,24 @@
   const FABRAIL_KEY = 'ysy.xprobe.fabrail';
   const FABFOLD_KEY = 'ysy.xprobe.fabfold';
   const FABPOS_KEY = 'ysy.xprobe.fabpos';
+  // v0.12.9：每颗钮单独显隐（用户拍板「关掉直接不显示不占位」）。存 { [id]: false } = 该颗藏掉；
+  // 没记 / true = 显示。默认九颗全显（折叠态仍只露「探」是另一层，与本表叠加）。
+  const FABVIS_KEY = 'ysy.xprobe.fabvis';
+  // v0.12.9：九颗的符号字面（grok 同款黑底白图，单字符符号而非汉字）。hover 全称仍在 data-tip。
+  const FAB_GLYPH = {
+    [FOLD_BTN_ID]: { open: '▴', fold: '▾' },  // 展开态点它收起（▲）；折叠态点它展开（▼）
+    [FBTN_ID]: '☰',    // 关 → 本页用户名单（三横 = 列表）
+    [CBTN_ID]: '▤',    // 榜 → 本页曝光榜（表格 = 榜）
+    [HOTBTN_ID]: '✦',  // 热 → 本页热点（星芒 = 热）
+    [RBTN_ID]: '↩',    // 回 → 待回关（回转箭头）
+    [BBTN_ID]: '◎',    // 杆 → 标杆账号（靶心 = 标杆）
+    [BPBTN_ID]: '▦',   // 帖 → 标杆帖子（网格 = 帖）
+    [AIBTN_ID]: '✎',   // 稿 → AI 草稿（铅笔 = 稿）
+    [FAB_ID]: '◉',     // 观 → 观测灯空闲态（同心圆）；冷却/到顶仍显示读秒数字
+  };
+  const FAB_GLYPH_IDS = [FOLD_BTN_ID, FBTN_ID, CBTN_ID, HOTBTN_ID, RBTN_ID, BBTN_ID, BPBTN_ID, AIBTN_ID, FAB_ID];
+  // 可单独关掉的八颗（折叠钮「探」不可关——关了就再也展不开了）。
+  const FAB_VIS_IDS = [FBTN_ID, CBTN_ID, HOTBTN_ID, RBTN_ID, BBTN_ID, BPBTN_ID, AIBTN_ID, FAB_ID];
   const FAB_POS_DEFAULT = { right: 14, bottom: 210 };   // v0.8.12 起的位置写死值，R2 之后它只是「复位」的落点
   const PEER_IDS = ['ysy-xprobe-fab', 'ysy-xprobe-panel'];
   let fabApplied = '';              // 上一次真正写进 DOM 的浮标状态（三态只在翻转时写）
@@ -1433,11 +1451,17 @@
   const REL_RECON_MIN_MS = 30000;   // 整文档 querySelectorAll 的关系对账：被动那一枪最多 30 秒一次
   const BADGE_MIN_MS = 2500;        // 拉黑徽标全扫的地板（节拍器 1.2 秒一轮，其中一轮就够）
   const BADGE_HEARTBEAT_MS = 15000; // 就算没收到挂载信号，15 秒也必扫一次（兜住漏网的行）
+  // v0.12.6 红线：X 在增量拉下一页评论时，绝不往页面里写节点。逐条对译参考插件 content-script.js
+  // 的调度器 xt({delayMs:Al}) —— Al=180：MutationObserver 只 request()，等 DOM 安静 180ms 才
+  // 一次性扫全页 + 批量画徽标；它同时用 Xl() 把自家节点引起的 mutation 全滤掉，不自激。
+  // 我们这边复用原有的突发判据（mutQueue / burstUntil），并把桥推送触发的重画也收进这道静默窗。
+  const REL_SETTLE_MS = 180;        // 与参考插件 Al 同值：DOM 最后一次动静后再等这么久才动笔
   // v0.8.10 徽标几何：这颗钮改成「浮」在时间右侧那块空白里（position:absolute），参与不了布局，
   // 所以名字/@handle/·/时间谁都不许挪。下面三个数只决定「这一行放得下哪种形态」。
   const BADGE_GAP_PX = 4;           // 与参照物（时间；没有就 @handle）右缘的间距
   const BADGE_FULL_W = 46;          // 「已拉黑」三个字 + 内边距的保守上界（按最长的字样算）
   const BADGE_DOT_W = 14;           // 空白不够时退成的小红点（只表状态，不当按钮）
+  const STATUS_PH_W = 16;           // v0.12.12 空白状态占位盒宽度（关系判不出时 badge 仍给一枚极窄空白盒，保证可悬浮拉黑）
   // v0.8.11 真机算出来的账（dump/2026-10-26_214118-tweet-benben2052243/page.html，13:41:17Z，ver 0.8.10）：
   // X 的原子类不是我想的那几个 —— r-dnmrzs = max-width:100%、r-1pi2tsx = height:100%，都不带 position，
   // 而 [data-testid="User-Name"] 是 flex-direction:row + align-items:center + max-width:100%，**它抱紧自己的
@@ -3394,15 +3418,22 @@
   // 强调色只在「这一颗有状态」时由各写手画上去，默认一排安静的灰。
   const FAB_STY = {
     width: '34px', height: '34px',
-    borderRadius: UI_TOK.rBtn, background: UI_TOK.panel, color: UI_TOK.inkDim, border: '1px solid ' + UI_TOK.line,
-    font: '12px ' + FAB_FONT, cursor: 'pointer', boxShadow: UI_TOK.shadow,
+    // v0.12.9 用户裁定「严格按照 grok 等按钮的大小和样式」：纯黑底 + 白符号 + 细白圈，
+    // 与页面右下角 grok/评论/头像那几颗同一套观感（grok 是黑底白线条图标）。
+    borderRadius: '9px', background: '#000', color: '#f5f7fa', border: '1px solid rgba(255,255,255,.14)',
+    font: '12px ' + FAB_FONT, cursor: 'pointer', boxShadow: '0 2px 10px rgba(0,0,0,.6)',
     padding: '0', lineHeight: '32px', textAlign: 'center',
   };
   // 钮内两段式结构：label span（单字）+ count span（右上角小数字，由 fabCountSet 挂）。
   // 方案 A 起钮面一律单字横排，v0.9.5 那套「双字竖排」连字号函数一起退场；全称搬进 data-tip，
   // 由柱内嵌 style 的 ::after 在 hover 时向左浮出。button.textContent 仍是「词+数」的拼接字面。
   function fabParts(btn, label) {
-    const lab = el('span', { display: 'block', lineHeight: '1.1' }, label);
+    // v0.12.9：符号 + 白色 + 图标字号（grok 同款白图）。btn 自身的颜色已由 FAB_STY 给白，
+    // 这里再显式写一遍是为了读秒/点亮写手改过 label 后仍能回到统一白色。
+    const lab = el('span', {
+      display: 'block', lineHeight: '1.1', color: '#f5f7fa',
+      font: fabGlyphPx(fabSizeEff()) + 'px ' + FAB_FONT,
+    }, label);
     btn.appendChild(lab);
     return lab;
   }
@@ -3422,6 +3453,10 @@
     return Math.round(Math.max(11, Math.min(22, f)));
   }
   function fabFontSty(px, txt) { return fabFontPx(px, txt) + 'px ' + FAB_FONT; }
+  // v0.12.9 符号专用字号：几何符号（▾☰▤✦↩◎▦✎◉）比等宽数字看着大，取直径 0.46、封顶 20px，
+  // 让每颗像 grok 那种「居中的小图标」而不是撑满的汉字。读秒数字仍走 fabFontSty，两下互不影响。
+  function fabGlyphPx(px) { return Math.round(Math.max(12, Math.min(20, px * 0.46))); }
+  function cdLetter() { return FAB_GLYPH[FAB_ID]; }
   function fabCd(ms) {
     // 读秒三档：≤999 秒写秒；≤99 分写「Nm」；再往上写「Nh」。
     // 不留四位数的理由不是省事：24 小时档到顶时剩余能上千秒，「1440」在直径 44px 的圆里放不下，
@@ -3501,9 +3536,11 @@
       if (!n) return;
       n.style.width = px + 'px';
       n.style.height = px + 'px';
-      n.style.borderRadius = UI_TOK.rBtn;
+      n.style.borderRadius = '9px';   // v0.12.9 grok 同款圆角（原 UI_TOK.rBtn=6 偏方）
       const lab = fabLab[id];
-      if (lab && id !== FAB_ID) lab.style.font = fabFontSty(px, lab.textContent);
+      // v0.12.9：所有钮都是单字符符号 ⇒ 一律走符号字号（小一号、像图标）；
+      // 守卫灯 FAB_ID 空闲时是 ◉ 符号，读秒时才由 fabLight 改成数字字号，这里先按符号起笔。
+      if (lab && id !== FAB_ID) lab.style.font = fabGlyphPx(px) + 'px ' + FAB_FONT;
     });
   }
   function fabBeatOnce() {
@@ -4068,6 +4105,49 @@
     const d = Math.floor((Date.now() - st.ms) / 86400000);
     if (!(d >= 0)) return null;
     return { d: Math.min(d, 9999), how, day: st.day, src: st.src };
+  }
+  // v0.12.12：手机关注（电脑没记关注时间）初始化 —— 「我关注 TA、但本机不知道从哪天开始」的人，
+  // 每次加载遇到就把 unknown 的起算日种成「这一趟页面加载时」，从那时起算未回关天数；种一次即持久
+  //（下次 firstSeenAt 不再是 0、followStartAt 不再回 null，不会重复种）。守 RL-11：只种 unknown，
+  // 已有 firstSeenAt / seenAs.following 的真实记录一律不动，不把旧数改写成「现在」。
+  function ensureFollowSeed(h) {
+    if (!h) return false;
+    try {
+      if (!noFollowbackOf(h)) return false;     // 不是「我关注、TA 没回关」就不碰（互关/他单向/陌生人都不动）
+      if (followStartAt(h)) return false;        // 已知道起算日，不覆盖
+      const u = (users && users[h]) || touchUser(h, Date.now());
+      if (!u) return false;
+      if (!u.firstSeenAt) u.firstSeenAt = Date.now();
+      u.updatedAt = Date.now();
+      scheduleStoreWrite();
+      return true;
+    } catch (e) { return false; }
+  }
+  // v0.12.11：TA 关注我的本地可读时间。本机台账里 TA 关注我就只见「TA 出现在我的粉丝 / 认证粉丝列表那天」
+  //（seenAs.followers / seenAs.verified_followers，与右缘「回」钮、关系标签「他单向」同一条井、同一口径）。
+  // 桥只带回 followed_by 布尔、不带时间戳，所以这里只能给「本机读到 TA 在我粉丝列表里的那天」，
+  // 不是 X 写着的精确关注时刻 —— 如实标口径，不编分钟级时间。
+  function themFollowingAt(h) {
+    const u = users[h] || {};
+    const iso = (u.seenAs && (u.seenAs.verified_followers || u.seenAs.followers)) || '';
+    if (!iso) return null;
+    return { day: dayOf(iso), ms: Date.parse(iso) || 0,
+      src: '本机在你的粉丝列表里看到 TA 的那天（TA 关注我的本地可读到的最早痕迹）' };
+  }
+  // v0.12.11：互关时间 = 我关注 TA 与 TA 关注我两件事里较晚的那一件 —— 只有两侧都成真，互关才成立。
+  // 一侧本机没记到时按记到的那侧算，并标注「另一侧没记到」，不冒充精确互关时刻。
+  function mutualAt(meF, themF) {
+    const a = (meF && meF.ms) ? meF.ms : 0;
+    const b = (themF && themF.ms) ? themF.ms : 0;
+    if (!a && !b) return null;
+    const ms = Math.max(a, b);
+    const note = (a && b) ? '' : '（另一侧本机没记到，按记到的这侧算）';
+    return { day: dayOf(new Date(ms).toISOString()), ms, note };
+  }
+  function daysSince(ms) {
+    if (!(ms > 0)) return -1;
+    const d = Math.floor((Date.now() - ms) / 86400000);
+    return isFinite(d) && d >= 0 ? d : -1;
   }
   function openFollowback() {
     // v0.11.3：待回关不再是第三页签 ⇒ 这颗「回」钮改成「未关」那一列上的一层筛选。
@@ -5346,8 +5426,8 @@
   // v0.9.3：排里两颗入口分开写清楚（用户原话「右下角加一个按钮，分别是：标杆账号、标杆帖子，
   // 点击账号打开账号的窗口，点击帖子打开帖子的窗口」）。字面从「标3」改成「标杆3」就是这个原因——
   // 两排在一起时「标3」分不清标的是人还是帖。
-  function benchFabText() { const n = benchCount(); return '杆' + (n ? n : ''); }
-  function benchPFabText() { const n = benchPCount(); return '帖' + (n ? n : ''); }
+  function benchFabText() { const n = benchCount(); return FAB_GLYPH[BBTN_ID] + (n ? n : ''); }
+  function benchPFabText() { const n = benchPCount(); return FAB_GLYPH[BPBTN_ID] + (n ? n : ''); }
   // ---------- 右缘「标杆帖子」窗口（v0.9.3）----------
   // 与账号窗口同一套纪律：position:fixed 挂 documentElement 的自家 UI ⇒ 不参与 X 的布局、不受 RL-16 那道
   // 「往 X 的 DOM 里缝东西」的总闸管；数全从本机库经 SW 的 dbq 白名单来（bench_post_rows，一条新 SQL 都不拼）；
@@ -5668,6 +5748,9 @@
   // 顺手把为定位临时改过的宿主样式原样还回去。
   function badgeSweep() {
     let n = 0;
+    // v0.12.10：关系弹卡（fixed 挂 documentElement）跟着总闸一起清 —— 关掉页面徽标时弹卡当场消失，
+    // 不留在半空（与 hotDetSweep 同一条纪律）。
+    try { n += relBadgeSweep(); } catch (e) { /* 清场腿翻了不挡主清场 */ }
     try {
       // v0.11.4 关系标签片：正常路径它是「拉黑」徽标的孩子，摘徽标就连它一起摘了；
       // 这里仍单独列上，防的是 React 把徽标搬走/拆了而那片自己留下来的极端情况 —— 宁可多摘一颗自家节点，
@@ -5711,6 +5794,11 @@
       return;
     }
     badgeSweepNeeded = true;   // 真扫过 = 页面里可能挂了我们的节点，翻回「关」时得去摘一遍
+    // v0.12.6 红线（用户点名「页面增量获取下一页评论会抖动，等页面渲染完之后再渲染」）：
+    // X 正在批量挂载 ⇒ 这一趟整页一个节点都不写，只留旗子；DOM 安静后下一拍自然补画。
+    // 拉黑徽标、比例标签、关系标签共用这道闸，不会有人在评论加载的中途往行里塞东西。
+    // force（用户自己拨开关 / 自检）不受限：那是明确的一次用户动作，不是页面自己在刷。
+    if (!force && relDomBusy()) { badgeNeedScan = true; perf.badgeSkips++; return; }
     if (!force && !badgeNeedScan && now - badgeLastScan < BADGE_HEARTBEAT_MS) { perf.badgeSkips++; return; }
     if (!force && now - badgeLastScan < BADGE_MIN_MS) { perf.badgeSkips++; return; }
     const t0 = nowMs();
@@ -5817,14 +5905,60 @@
   // ⚠ 第三方观察者脚本也往名字后面缝状态字（真机见过「（互）单向关注」「互相关注」，displayNameOf 的 TAIL 就是剥它们的）——
   //   那些不是 X 的 DOM，这里一个都不认；关系只认 X 原生钮的 testid 后缀与 aria、桥读数、加自家台账。
   const REL_CLS = 'ysy-xprobe-rel';
-  // 档位文案与配色（v0.11.13 起颜色/形状 100% 对齐参考插件「不是兄弟」的 .xro-badge*，content-script.css 抄的）：
-  // mutual=绿胶囊（tone #a8e89a / bg #dff7d9）、me=橙方角（#f1b84b / #fff0c9，参考插件 following_only 的形状）、
-  // them=蓝胶囊（#78bfea / #dff2ff，参考插件 follows_you_only）。字色一律 #13231b。
+  // 档位文案与配色（v0.11.13 形状 100% 对齐参考插件「不是兄弟」的 .xro-badge*；v0.12.5 补齐它
+  // content-script.css 里 :root[data-xro-theme="dark"] 那一整套深底亮字）：
+  //   mutual=绿胶囊（tone #a8e89a / bg #dff7d9 / dark #183b25 + #b8efa9）、
+  //   them=蓝胶囊（#78bfea / #dff2ff / dark #173747 + #a8dcf8，参考插件 follows_you_only）、
+  //   me=橙方角（#f1b84b / #fff0c9 / dark #493817 + #ffd77b，参考插件 following_only 的形状）。
+  // ⚠ 旧版 relChipStyle 读的是 rel.bg，而 relVerdict 返回的对象只带 key/lab/color/dash/tip，
+  //   background=undefined 被浏览器直接丢弃 ⇒ 深色页面上「透明底 + #13231b 深墨绿字 + 深绿边」
+  //   = 用户截图里那颗「黑色的互关」。现在按 key 从这张权威表取整包配色，不再指望 rel 自带 bg。
   const REL_TAG = {
-    mutual: { lab: '互关', color: '#a8e89a', bg: '#dff7d9', dash: false },
-    them: { lab: '他单向', color: '#78bfea', bg: '#dff2ff', dash: false },
-    me: { lab: '我单向', color: '#f1b84b', bg: '#fff0c9', dash: true },
+    mutual: { lab: '互关', color: '#a8e89a', dash: false,
+      light: { bg: '#dff7d9', ink: '#13231b' }, dark: { bg: '#183b25', ink: '#b8efa9' } },
+    them: { lab: '他单向', color: '#78bfea', dash: false,
+      light: { bg: '#dff2ff', ink: '#13231b' }, dark: { bg: '#173747', ink: '#a8dcf8' } },
+    me: { lab: '我单向', color: '#f1b84b', dash: true,
+      light: { bg: '#fff0c9', ink: '#13231b' }, dark: { bg: '#493817', ink: '#ffd77b' } },
   };
+  // ---------- v0.12.5 主题：逐条对译参考插件 content-script.js 的 Vo()/rr() ----------
+  // 它把主题戳写在 document.documentElement.dataset.xroTheme（CSS 里就是 :root[data-xro-theme="dark"]）。
+  // isolated world 读不到它的 JS 变量，但共享同一份 DOM ⇒ 先跟随那一位，与同页那颗绿色胶囊永远同明同暗；
+  // 它不在就按 rr() 同款公式量 body/documentElement 的背景亮度（阈值 128），再退系统偏好。
+  // 每趟扫描只算一次（renderBlocksInner 调 relThemeSync），不在每颗标签上读 computedStyle。
+  let relThemeNow = 'light';
+  function relThemeDetect() {
+    try {
+      const de = document.documentElement;
+      const t = de && de.getAttribute && de.getAttribute('data-xro-theme');
+      if (t === 'dark' || t === 'light') return t;
+    } catch (e) { /* 没有 documentElement：走下面的亮度 */ }
+    try {
+      if (typeof getComputedStyle === 'function') {
+        const list = [document.body, document.documentElement];
+        for (let i = 0; i < list.length; i++) {
+          const m = list[i] && String(getComputedStyle(list[i]).backgroundColor || '').match(/[\d.]+/g);
+          if (!m || m.length < 3 || (m.length >= 4 && Number(m[3]) === 0)) continue;
+          const lum = (Number(m[0]) * 299 + Number(m[1]) * 587 + Number(m[2]) * 114) / 1000;
+          return lum < 128 ? 'dark' : 'light';
+        }
+      }
+    } catch (e) { /* 拿不到 computedStyle：退系统偏好 */ }
+    try {
+      const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+      if (mq) return mq.matches ? 'dark' : 'light';
+    } catch (e) { /* 老引擎没有 matchMedia */ }
+    return 'light';
+  }
+  function relThemeSync() { relThemeNow = relThemeDetect(); return relThemeNow; }
+  // dark-mode 指南：读过 matchMedia('(prefers-color-scheme: dark)') 就必须处理 change —— 系统偏好一翻，
+  // 当场重算主题并安排一次重画（relChipRow 的 data-t 逼着每颗标签就地换配色，不重建节点）。
+  try {
+    const mqTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    if (mqTheme && typeof mqTheme.addEventListener === 'function') {
+      mqTheme.addEventListener('change', () => { relThemeSync(); badgeNeedScan = true; relRenderSoon(); });
+    }
+  } catch (e) { /* 沙箱/老引擎：靠每趟扫描重算兜底 */ }
   const dayOf = (iso) => String(iso || '').slice(0, 10) || '日期没记';
   // ---------- v0.11.7 功能一：关系读数桥（第三条证据腿） ----------
   // 为什么 home 时间线此前判不出：那儿的帖子行里根本没有关系钮（钮只在列表行/主页/名片上），
@@ -5846,17 +5980,31 @@
   let fiberSeq = 0;
   let fiberLastAsk = 0;
   // v0.11.9 用户报「要鼠标悬浮头像才更新」：回话来了只置 badgeNeedScan 是不够的——下一轮扫描要等
-  // 节拍（15 秒兜底）或下一次页面动静，体感就是「不动就不刷新」。回话一到就自己安排一次重画（50ms，
-  // 去抖：一屏多行回话也只排一次），动态刷新从此不等任何人。
+  // 节拍（15 秒兜底）或下一次页面动静，体感就是「不动就不刷新」。回话一到就自己安排一次重画，
+  // 动态刷新从此不等任何人。v0.12.6 起这一拍改成 180ms 静默窗 + 帧后（见下面 relRenderSoon），
+  // 一批回话仍只排一次，但绝不在 X 增量挂载评论的中途动笔。
+  // v0.12.6：DOM 还在批量挂载（X 正在增量拉下一页评论）⇒ 这一趟一个节点都不写。
+  // 突发判据复用观察器那两笔现存账：排队的批次还没跑完 / 1.5 秒突发窗没过。
+  // 这两笔都是页面自己的动静（自家节点被 isOwnNode 挡在观察器外，不会自激），与参考插件 Xl() 同效。
+  function relDomBusy() { return mutQueue.length > 0 || inBurst(); }
   let relRenderT = 0;
   function relRenderSoon() {
+    // 参考插件 xt 的 request() 语义：`if (i !== null) return` —— 一批动静只合成一趟，
+    // 已有在途的那一拍不重排。固定 180ms 静默窗，到点还在挂载就整趟跳过再排一拍。
+    // 不写成「每来一条就 clearTimeout 重排」：桥持续推送时那会无限顺延，标签反而永远不出现。
     if (relRenderT) return;
-    // v0.11.14：名单开着就一起翻色/翻状态（renderFlist 自己保滚动位置，整棵重画不再有代价）
     relRenderT = setTimeout(() => {
       relRenderT = 0;
-      try { render(); } catch (e) { /* 渲染层自己保底 */ }
-      try { if (flistOpen) renderFlist(); } catch (e) { /* 名单自己保底 */ }
-    }, 50);
+      if (relDomBusy()) { badgeNeedScan = true; relRenderSoon(); return; }  // 还在加载：继续等静默
+      // 等这一帧画完再动笔（chrome-extensions 指南：批量 DOM 写入放帧后，别占页面的布局帧）。
+      // 自检沙箱没有 rAF ⇒ 同步跑，判据仍打得中；真机一律走帧后。
+      const go = () => {
+        try { render(); } catch (e) { /* 渲染层自己保底 */ }
+        // v0.11.14：名单开着就一起翻色/翻状态（renderFlist 自己保滚动位置，整棵重画不再有代价）
+        try { if (flistOpen) renderFlist(); } catch (e) { /* 名单自己保底 */ }
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go); else go();
+    }, REL_SETTLE_MS);
   }
   // 问话/推送两路共用的合并：users 里只有「至少一格是布尔」的条目才进台账（不冒充读数），
   // handle 归一小写。回 n = 这一批真变了账的条数（0 = 没有新读数，调用方就不必重画）。
@@ -5901,14 +6049,20 @@
       try { if (!d || d.source !== REL_BRIDGE_SRC || d.type !== 'result' || d.id !== id) return; } catch (e2) { return; }
       done();
       const n = relFiberMerge(d.users);
-      if (n) { badgeNeedScan = true; relRenderSoon(); }   // 有新读数 ⇒ 当场安排重画（不等节拍、不等悬浮）
+      // v0.12.7：冷启动兜底 —— 问询回话里带了 tids 对应的帖子读数也一起收（push 错过时靠这趟补）
+      const tn = hotNetMerge(d.tweets);
+      if (n || tn) { badgeNeedScan = true; relRenderSoon(); }   // 有新读数 ⇒ 当场安排重画（不等节拍、不等悬浮）
     };
     try { win.addEventListener('message', onMsg); } catch (e) { fiberPending = false; return; }
     to = setTimeout(done, 800);   // 桥没回话（脚本被 X 摘了/世界不同）：解锁让下一趟还能问
     // 问询带上缺读数的 handle（≤80 个）：桥只回这几个人，回包小、页面上别的账号不外送。
     // v0.11.8 桥那边有三条源（网络旁听攒的 + Redux store + fiber 上下爬），这边不用知道细节，
     // 问出去就行 —— 时间线行 fiber 上没有的读数，store 与旁听里多半有。
-    try { win.postMessage({ source: REL_BRIDGE_SRC, type: 'query', id: id, handles: (handles || []).slice(0, 80) }, (win.location && win.location.origin) || '*'); }
+    // v0.12.7：附带当前详情页 status id（有就带），桥只在问了 tids 时才回 tweets 字段。
+    const ask = { source: REL_BRIDGE_SRC, type: 'query', id: id, handles: (handles || []).slice(0, 80) };
+    const sid = statusIdFromPath((win.location && win.location.pathname) || '');
+    if (sid) ask.tids = [sid];
+    try { win.postMessage(ask, (win.location && win.location.origin) || '*'); }
     catch (e) { done(); }
   }
   // v0.11.11 常驻推送监听：X 每次带关系读数的回包（时间线刷新/名片/hovercard…）一到，桥就把
@@ -5920,9 +6074,19 @@
       window.addEventListener('message', (ev) => {
         let d = null;
         try { d = ev && ev.data; } catch (e) { return; }
-        try { if (!d || d.source !== REL_BRIDGE_SRC || d.type !== 'push') return; } catch (e2) { return; }
-        const n = relFiberMerge(d.users);
-        if (n) { badgeNeedScan = true; relRenderSoon(); }
+        try { if (!d || d.source !== REL_BRIDGE_SRC) return; } catch (e2) { return; }
+        if (d.type === 'push') {
+          const n = relFiberMerge(d.users);
+          if (n) { badgeNeedScan = true; relRenderSoon(); }
+          return;
+        }
+        // v0.12.7：帖子精确指标 delta（bridge 从 X 自己回包收割）。合并进 netTweets 后走同一道
+        // 180ms 静默窗重画 —— 不另起定时器、不在页面刷新的中途动笔（RL-30）。
+        if (d.type === 'tweetpush') {
+          const n = hotNetMerge(d.tweets);
+          if (n) { badgeNeedScan = true; relRenderSoon(); }
+          return;
+        }
       });
     } catch (e) { /* 沙箱没有 window 事件：这一腿安静不跑，问询兜底 */ }
   }
@@ -6018,11 +6182,15 @@
   // 内侧高光、淡色底。虚线只保留给「推断」档位（dash=true 时 border 换 dashed）。
   // v0.12.2 补参考插件 .xro-badge 的三条防抖筋骨：flex:none（不挤人也不被人挤）、
   // pointer-events:none（「鼠标一过头标光标就乱」的断根）、外边距分宿主两档（a 里 4px / 兄弟位 0 8px）。
-  function relChipStyle(x, rel, host) {
-    x.style.color = '#13231b';
-    x.style.background = rel.bg;
+  function relChipStyle(x, rel, host, pos) {
+    // v0.12.5：唯一写者 = content-script.css 的 .xro-badge + :root[data-xro-theme="dark"] .xro-badge--*。
+    // 按 key 取整包配色（浅/深两套），不再读 relVerdict 从不提供的 rel.bg。
+    const tag = REL_TAG[rel.key] || REL_TAG.mutual;
+    const pal = relThemeNow === 'dark' ? tag.dark : tag.light;
+    x.style.color = pal.ink;
+    x.style.background = pal.bg;
     x.style.border = (rel.dash ? '1px dashed ' : '1px solid ')
-      + ('color-mix(in srgb, ' + rel.color + ' 55%, #13231b)');
+      + ('color-mix(in srgb, ' + tag.color + ' 55%, #13231b)');
     x.style.borderRadius = rel.key === 'me' ? '4px' : '999px';
     x.style.boxShadow = rel.key === 'me'
       ? '2px 2px 0 rgba(100, 70, 15, 0.18)'
@@ -6036,15 +6204,41 @@
     x.style.alignItems = 'center';
     x.style.flex = 'none';
     x.style.pointerEvents = 'none';
-    const inA = !!host && String(host.tagName).toUpperCase() === 'A';
+    // v0.12.6 防拉伸四件套（只管自己，一个字都不改 X 的宿主布局）：
+    //   · maxWidth/height = max-content ⇒ 纵排 flex 里不会被 align-items:stretch 拉成一条；
+    //   · alignSelf/justifySelf ⇒ flex/grid 里靠左、居中，不占满整格；
+    //   · gridRow = 1 ⇒ 万一宿主是 grid（v0.11.9 被吞成新格子那一口坑），也压在第一行，
+    //     不会另起一行把行高撑起来 —— 这正是「评论增量加载时页面抖」的老根因。
+    x.style.alignSelf = 'center';
+    x.style.justifySelf = 'start';
+    x.style.maxWidth = 'max-content';
+    x.style.height = 'max-content';
+    x.style.gridRow = '1';
+    // 参考插件 `a > .xro-badge` 是子选择器：只有「标签真的是 a 的孩子」才用 4px 档。
+    // afterend / beforebegin 是兄弟位，host 只是参照元素，不该按它的 tagName 误判。
+    const inA = (pos === undefined || pos === 'beforeend') && !!host && String(host.tagName).toUpperCase() === 'A';
     x.style.marginInline = inA ? '4px' : '0 8px';
     x.style.verticalAlign = inA ? 'text-bottom' : '1px';
     return x;
   }
-  function relChipEl(rel, host) {
+  function relChipEl(rel, host, h, pos) {
     const x = el('span', {}, rel.lab);
-    relChipStyle(x, rel, host);
+    relChipStyle(x, rel, host, pos);
     x.setAttribute('class', REL_CLS);
+    // 参考插件 go() 的两枚属性：title='@handle · 说明'、aria-label='@handle：完整档位名'。
+    // 文字 + 颜色双通道（不靠颜色单独表意），且屏幕阅读器读得到。
+    x.title = '@' + String(h || '') + ' · ' + rel.tip;
+    x.setAttribute('aria-label', '@' + String(h || '') + '：' + rel.lab);
+    // 参考插件 .xro-badge 的 160ms 入场（no-preference 才放）。用 WAAPI 而不是往页面塞
+    // <style>/@keyframes：项目红线不许给 X 的 DOM 多一个节点；动画只碰 opacity/transform，不惊动布局。
+    try {
+      const mqA = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+      if ((!mqA || !mqA.matches) && typeof x.animate === 'function') {
+        x.animate([{ opacity: 0, transform: 'translateY(2px) scale(0.94)' },
+                   { opacity: 1, transform: 'translateY(0) scale(1)' }],
+                  { duration: 160, easing: 'ease-out' });
+      }
+    } catch (e) { /* 沙箱/老引擎没有 WAAPI：动画缺席，标签照常 */ }
     // 自家记号也打一份：清场选择器与 inProbe()（第三方注入检测与读名跳过）认的是这个，
     // 打了它这片标签就永远不会被当成「别人缝进页面的东西」，也不会把「互关」二字读进名字台账。
     x.setAttribute('data-xprobe', 'rel');
@@ -6132,8 +6326,8 @@
     const le = relHandleLoc(n, h), xe = relNameAnchor(n, h, le);
     return (!le || !xe) ? null : n;
   }
-  // Hi：三段候选（自己 → User-Name 容器 → UserCell/名片）各给一轮机会，次序固定：
-  // 容器末尾 > @handle 前 > 名字锚后；全空再看自己（同样过禁区判据）。
+  // Hi：三段候选（自己 → User-Name 容器 → UserCell/名片）各给一轮机会。
+  // v0.12.6 次序改了，理由写在下面：名字锚后 > 容器末尾 > @handle 前 > 自己。
   function relPlace(scope, h) {
     const cands = [scope];
     try {
@@ -6142,9 +6336,21 @@
       if (w && w !== scope) cands.push(w);
       if (cell && cell !== scope) cands.push(cell);
     } catch (e) { /* 候选凑不齐就用自己 */ }
+    // ① 昵称右侧（用户 2026-11-12 点名的位置）。参考插件 Hi 的首选是 po（User-Name 容器
+    //    beforeend），但它紧接着在 go() 里调 no()/mo()/Pi()，用 !important 把那一层改成
+    //    flex row / grid 才让胶囊站得住。我们**不改 X 的宿主布局**（art-022 实测：改宿主布局
+    //    正是「评论多就卡顿、飘逸、光标乱」的根因），所以直接选更内层的名字锚 afterend ——
+    //    同一个视觉结果（紧跟显示名、@handle 之前），但绝不碰宿主的 display / grid。
+    //    上一版首选 po 时，X 的 User-Name 是 grid ⇒ 胶囊被当成新格子，独占一行还被拉满，
+    //    就是用户截图里「昵称下方那条宽的绿条」。
+    for (let i = 0; i < cands.length; i++) {
+      const le = relHandleLoc(cands[i], h);
+      const n = relNameAnchor(cands[i], h, le);
+      if (n) return { host: n, pos: 'afterend' };
+    }
+    // ② 找不到名字锚时才退到 User-Name 容器末尾（此时上面的防拉伸四件套兜住 grid/flex 拉伸）。
     for (let i = 0; i < cands.length; i++) { const n = relNameWrap(cands[i], h); if (n) return { host: n, pos: 'beforeend' }; }
     for (let i = 0; i < cands.length; i++) { const n = relHandleLoc(cands[i], h); if (n) return { host: n, pos: 'beforebegin' }; }
-    for (let i = 0; i < cands.length; i++) { const n = relNameAnchor(cands[i], h, relHandleLoc(cands[i], h)); if (n) return { host: n, pos: 'afterend' }; }
     if (!relInAvatar(scope) && !relInTime(scope)) return { host: scope, pos: 'beforeend' };
     return null;
   }
@@ -6169,6 +6375,9 @@
     let cur = null;
     try {
       scope.querySelectorAll('[data-xprobe="rel"]').forEach((c) => {
+        // v0.12.10：住进 badge 盒子的关系标签（data-role=rel）由 badgePaint 全权管，这里一个都不许碰
+        //（否则每趟 relChipRow(null) 摘历史名字行节点时，会连 badge 里那颗新标签一起摘掉）。
+        if (c.getAttribute('data-role') === 'rel') return;
         if (c.getAttribute('data-h') === h) cur = c;
         else { try { c.remove(); } catch (e2) { /* 复用行留下的旧颗，摘了就摘了 */ } }
       });
@@ -6180,16 +6389,26 @@
     const spot = relPlace(nameEl, h);
     if (!spot) return !!cur;
     const k = rel.key + (rel.dash ? '~' : '+');
+    // v0.12.5：主题单独记 data-t（不动 data-k 的档位/虚实语义）。深浅一翻面就 tc=true ⇒
+    // 就地重刷配色；档位没变时不重写 textContent/title，零写纪律与防抖原样保住。
+    const tc = !cur || (cur.getAttribute('data-t') || '') !== relThemeNow;
     const kc = !cur || (cur.getAttribute('data-k') || '') !== k;
     const mv = !cur || !relAtSpot(cur, spot.host, spot.pos);
     if (!cur) {
-      cur = relChipEl(rel, spot.host);
+      cur = relChipEl(rel, spot.host, h, spot.pos);
       cur.setAttribute('data-h', h);
       cur.setAttribute('data-k', k);
+      cur.setAttribute('data-t', relThemeNow);
     } else {
       // 档位或虚实线翻了（桥读数到了、钮翻了）：就地改字面与样式——不重建节点，不惊动布局
-      if (kc) { cur.textContent = rel.lab; cur.title = rel.tip; cur.setAttribute('data-k', k); }
-      if (mv || kc) relChipStyle(cur, rel, spot.host);
+      if (kc) {
+        cur.textContent = rel.lab;
+        cur.title = '@' + h + ' · ' + rel.tip;
+        cur.setAttribute('aria-label', '@' + h + '：' + rel.lab);
+        cur.setAttribute('data-k', k);
+      }
+      if (tc) cur.setAttribute('data-t', relThemeNow);
+      if (mv || kc || tc) relChipStyle(cur, rel, spot.host, spot.pos);
     }
     if (mv) {
       // 纵排容器（详情页两行身份区）里不许横向 stretch：对齐改顶格，宽度缩回字面
@@ -6428,68 +6647,72 @@
   // 逐轮改节点本身就是页面能观察到的新节奏（与浮标同纪律）。
   // 签名里带上比例标签的字面：台账里那两个数被名片刷新时，sig 一变就重画一次，平时一个字都不写。
   function badgeSig(h, bad, form, rt, rel) {
-    // 第 4 格是「数过没过期」：过期只改边框/亮度、不改宽度 ⇒ 它可以就地重画，不该像第 3 格（标签字面）
-    // 那样把粘住打断去重挑落点。
-    // v0.11.4 第 6 格是关系标签的档位：与第 3 格同一条道理 —— 出不出这颗、哪一颗，都改宽度，所以它进
-    // 「不许粘、要重挑」的那一组比对，这里只是把它也写进签名，好让字面翻了自己重画一次。
-    // v0.11.7 档位后面带虚实线（~虚/+实）：宽度不变但边框翻的那一下（桥读数来了，「我单向」从推断的
-    // 虚线翻成实线）也得重画，否则老样子一直留在身上。
-    return h + '|' + (bad ? '1' : '0') + '|' + form + '|' + (rt ? rt.shown : '') + '|' + (rt && rt.stale ? '1' : '0')
-      + '|' + (rel ? rel.key + (rel.dash ? '~' : '+') : '');
+    // v0.12.12：行内不再画百分比（收进弹窗）⇒ rt 不再进签名（它的刷新不该触发 badge 重画）；
+    // 主题戳进签名：深/浅翻面时整颗就地重画（取代老的 in-place 局部刷新，避免两套逻辑分家）。
+    // 槽位 = h | bad | form | relkey(~/+)| theme。
+    return h + '|' + (bad ? '1' : '0') + '|' + form + '|'
+      + (rel ? rel.key + (rel.dash ? '~' : '+') : '') + '|' + relThemeNow;
   }
-  function badgePaint(n, h, nameTxt, bad, form, rt) {
+  function badgePaint(n, h, nameTxt, bad, form, rt, rel) {
     try {
-      if (form === 'dot') {
-        n.textContent = '';
-        n.title = '@' + h + ' 已进本机拉黑名单（blocks 表）· 这一行空白太窄，只给点不给钮';
-      } else {
-        // v0.11.9：盒子里最多两件（拉黑钮 + 比例标签）——关系标签搬进名字行了（relChipRow，见上）。
-        // 仍按「是什么」认（button / 其余那一枚），不按 children 下标认，React 顺序怎么变都认不错。
-        let b = null, lb = null;
-        try {
-          const kids = n.children || [];
-          for (let i = 0; i < kids.length; i++) {
-            const c = kids[i];
-            const tn = String(c.tagName || '').toLowerCase();
-            if (tn === 'button') b = c;
-            else lb = c;
-          }
-        } catch (e) { /* 读不到就整棵重建 */ }
-        if (!b) {
-          b = el('button', {
-            background: 'transparent', border: '1px solid ' + UI_TOK.line, borderRadius: '6px', cursor: 'pointer',
-            font: 'inherit', padding: '0 5px', lineHeight: '15px',
-          });
-          b.type = 'button';
-          b.addEventListener('click', () => { blockToggle(n.getAttribute('data-h'), n.getAttribute('data-n')); });
-          n.textContent = ''; n.append(b);
-        }
-        n.style.font = '11px ui-monospace, Consolas, monospace';
-        b.textContent = bad ? '已拉黑' : '拉黑';
-        b.style.color = bad ? UI_TOK.red : UI_TOK.inkDim;
-        b.title = bad ? '@' + h + ' 已进本机拉黑名单（blocks 表），点一下取消'
-          : '把 @' + h + ' 记进本机拉黑名单（只记账：本机库 + 面板标记，不动 X 的屏蔽/关注）';
-        // v0.8.13 比例标签：底色=档位、字=百分比（用户口径）。纯展示件 —— 不挂事件、不拦事件，
-        // 点它等于点它底下的那一行。宽度早在 badgeFit 的 need 里量过，塞进来不会压住右边那块字。
-        if (rt) {
-          const st = RATIO_STY[rt.tier] || RATIO_STY.y;
-          if (!lb) n.append(ratioChipEl(rt, { marginLeft: BADGE_GAP_PX + 'px' }));
-          else {
-            lb.textContent = rt.shown; lb.style.background = st.bg; lb.style.color = st.fg; lb.title = rt.tip;
-            // 数从「新」翻到「过期」不改宽度、只改边框与亮度 ⇒ 就地重画（不搬、不新建）
-            lb.style.border = rt.stale ? '1px dashed ' + UI_TOK.inkDim : '1px solid transparent';
-            lb.style.opacity = rt.stale ? '0.72' : '1';
-          }
-        } else if (lb) { try { lb.remove(); } catch (e) { /* React 已摘：下一趟重建 */ } }
-        n.title = '';
-      }
+      n.style.font = '11px ui-monospace, Consolas, monospace';
       n.setAttribute('data-h', h);
       n.setAttribute('data-n', nameTxt);
+      // 每趟整棵就位（清掉上一趟可能残留的按钮 / 比例 / 老 rel 标签），避免长期 bug（cRel 双计数、主题翻面残留）。
+      // 重画只在「签名变了」时发生（renderBlocks 的粘住判定拦着），所以这里重建是低频的。
+      // 清场用 children + remove()：同时兼容真 DOM 与自检沙箱——沙箱 El 未实现 firstChild/removeChild，
+      // 老写法 while(n.firstChild) 在沙箱里恒为 false、清不掉，会留下上一趟的标签 ⇒ 同款标签重复出现。
+      try {
+        const _kids = (n.children && n.children.length) ? Array.prototype.slice.call(n.children) : [];
+        for (let _i = 0; _i < _kids.length; _i++) { try { _kids[_i].remove(); } catch (e) {} }
+      } catch (e) {}
+      const blocked = !!bad;
+      if (form === 'dot') {
+        // 极窄缝：退成一枚小状态点（红=已拉黑 / 关系色 / 灰色空白），仍可被悬浮唤出弹窗
+        const dot = el('span', { width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block', flex: 'none' });
+        dot.style.background = blocked ? UI_TOK.red : (rel ? (REL_TAG[rel.key] || REL_TAG.mutual).color : UI_TOK.inkFaint);
+        n.append(dot);
+        n.title = '@' + h + (blocked ? ' · 已进本机拉黑名单（悬浮弹窗里点「取消拉黑」可解除）' : ' · 悬浮看关系详情、可拉黑');
+      } else if (rel) {
+        // v0.12.12：badge 只承载关系状态标签（互关/他单向/我单向），拉黑钮已迁到悬浮弹窗。
+        // 关系标签住进盒子，pointer-events:none（悬停用父级盒子接事件）；标题写关系详情（弹卡同款）。
+        const lb = relChipEl(rel, n, h, 'beforeend');
+        lb.setAttribute('data-role', 'rel');
+        lb.setAttribute('data-t', relThemeNow);
+        lb.setAttribute('data-k', rel.key + (rel.dash ? '~' : '+'));
+        lb.setAttribute('data-h', h);
+        lb.setAttribute('data-relkey', rel.key);
+        lb.style.marginInline = '0 0 0 ' + BADGE_GAP_PX + 'px';
+        lb.title = relBadgeTip(h, rel);
+        n.append(lb);
+        n.title = '';
+      } else {
+        // 空白状态（关系判不出）：给一枚中性占位盒（不写百分比、不编数，守 RL-11），保证可悬浮唤出弹窗去拉黑。
+        const ph = el('span', { display: 'inline-block', flex: 'none', width: '14px', height: '12px', borderRadius: '4px' });
+        ph.style.border = '1px solid ' + UI_TOK.line;
+        ph.style.marginInline = '0 0 0 ' + BADGE_GAP_PX + 'px';
+        ph.setAttribute('data-role', 'ph');
+        ph.title = '@' + h + ' · 关系未知（本机没读到 TA 的关系读数）· 悬浮看详情、可拉黑';
+        n.append(ph);
+        n.title = '';
+      }
+      // blocked 视觉：给整个盒子描红 + 淡红底，已拉黑一眼可辨，但状态标签文字仍保留（不吞掉互关/单向）。
+      if (blocked) {
+        n.style.border = '1px solid ' + UI_TOK.red;
+        n.style.background = 'rgba(224,108,96,.14)';
+        n.style.borderRadius = '6px';
+        n.style.padding = '0 2px';
+      } else {
+        n.style.border = ''; n.style.background = ''; n.style.borderRadius = ''; n.style.padding = '';
+      }
       n.setAttribute('data-f', form);
-      n.setAttribute('data-xsig', badgeSig(h, bad, form, rt, null));
+      // v0.12.12：行内不再画百分比 ⇒ 签名第 4 格传 null（rt 不再参与）；主题戳进签名（深/浅翻面整颗重画）。
+      n.setAttribute('data-xsig', badgeSig(h, bad, form, null, rel));
+      bindRelBadgeHover(n, h);   // 悬浮绑定：关系标签/空白占位/红点都接同一套弹窗（含弹窗里的拉黑钮）
     } catch (e) { /* 写不进去下一趟再来（徽标是显示件，不是账本，掉了不丢数据） */ }
   }
   function renderBlocksInner() {
+    relThemeSync();   // v0.12.5：每趟扫描只量一次页面主题，本趟所有标签共用（不在每颗上读 computedStyle）
     let names;
     try {
       names = [];
@@ -6565,13 +6788,22 @@
       const fb = (fbRec && Date.now() - fbRec.at <= REL_FIBER_TTL) ? fbRec : null;
       if (fb) cFb++; else { cFbNo++; fiberAsk.add(h); }
       const rel0 = relVerdict(h, followOf(rowScope, h), flSeen, fb);
+      // v0.12.12：手机关注初始化 —— 「我关注 TA、但本机不知道从哪天开始」的人，这一趟把 unknown 起算日
+      // 种成加载时，从那时起算未回关天数（种一次即持久，下次不再 unknown）。只在 rel0 是「我单向」时意义最大，
+      // 但 ensureFollowSeed 内部已用 noFollowbackOf 收敛，无副作用可放心对每行都问一声。
+      ensureFollowSeed(h);
       // v0.12.2：关系标签安置 100% 复刻参考插件「不是兄弟」的 host+position（relPlace，兄弟插入、
       // 禁区判据、位置没变不写）——nameEl 只是安置起点，标签落点由算法挑；认领收在名片/行里。
       // 没读数就把行里那颗摘掉。cRel/cRelNo = 画上了几颗 / 判得出却没画上（宿主没了等，应长期为 0）。
-      if (rel0) { if (relChipRow(nameEl, h, rel0)) cRel++; else cRelNo++; }
-      else relChipRow(nameEl, h, null);
-      const needOf = (x) => BADGE_FULL_W + (x ? BADGE_GAP_PX + ratioBudget(x) : 0);
-      let need = needOf(rt);
+      // v0.12.10：关系标签从名字行搬进 badge 盒子（拉黑后面），与百分比同一处；百分比收进悬浮弹卡，
+      // 不再占行内宽度。名字行那颗独立标签就此停画（relChipRow 传 null 摘掉历史遗留节点）。
+      relChipRow(nameEl, h, null);
+      // cRel/cRelNo 由 badge 链路统一记（粘住/新建两处），这里不再重复 +1
+      // v0.12.12：badge 现在只承载「状态标签」（互关/单向/空白占位），拉黑钮已迁到悬浮弹窗里；
+      // 宽度预算只剩状态标签本身（relBudget），空白占位用 STATUS_PH_W。整颗远小于原来的 46+，
+      // 长昵称也几乎总能放下，互关不会再被挤掉。百分比收进弹窗、不占这条缝。
+      const needOf = (x) => BADGE_GAP_PX + (x ? relBudget(x) : STATUS_PH_W);
+      let need = needOf(rel0);
       let n = take(h);
       // ① 粘住：老宿主仍然抱得住这一行、老位置仍然完整躺在某条缝里 ⇒ 这一趟对它一个字都不写。
       // 这就是「不来回跑」的那条：增量刷新时名字行右边会陆续挂上东西（第三方「互关」胶囊、
@@ -6586,31 +6818,27 @@
         // （用户看到的「跑」有一半是这个）。badgeEnsureHost 幂等，且仍然记在案，关闸照样还回去。
         if (hr0 && nr && badgeEnsureHost(host0)) {
           const form0 = n.getAttribute('data-f') || 'full';
-          const wantRt = form0 === 'full' ? rt : null;   // 小红点那颗装不下标签，也不许长标签
-          const sig = badgeSig(h, bad, form0, wantRt, null);
-          // 标签的有无/字面一翻，这颗的宽度就翻了 ⇒ 老落点不是按这个宽度量的，不许粘：走下面重挑一次。
-          // 多久翻一次？只有「某人第一次被悬停到名片」那种一次性的事（罕见），换来的是「绝不压住右边那块字」。
-          // v0.11.9：关系标签搬进名字行、不再住徽标里 ⇒ 签名第 6 格恒空，档位翻动由 relChipRow 自己就地改。
-          const xs = (n.getAttribute('data-xsig') || '').split('|');
-          const paintedRt = xs[3] || '';
-          if (paintedRt === (wantRt ? wantRt.shown : '')
-            && badgeInGap(badgeGaps(host0, refEl, rr, hr0), nr.left, nr.right)) {
+          // v0.12.12：状态标签永不因窄缝丢失（解决长昵称把互关挤掉）；百分比只在弹窗里，行内不再画。
+          const wantRel = rel0;
+          const wantRt = null;
+          // 整包签名（含主题戳）相同 + 仍躺在缝里 ⇒ 这一趟一个字都不写（不来回跑）。
+          const sig = badgeSig(h, bad, form0, wantRt, wantRel);
+          if (n.getAttribute('data-xsig') === sig
+              && badgeInGap(badgeGaps(host0, refEl, rr, hr0), nr.left, nr.right)) {
             cOk++;
-            if (form0 === 'dot') cDot++; else if (wantRt) { cRatio++; if (wantRt.stale) cRatioOld++; }
-            if (form0 === 'full' && !wantRt) cRatioNo++;
-            if (n.getAttribute('data-xsig') !== sig) badgePaint(n, h, nameTxt, bad, form0, wantRt);
+            if (form0 === 'dot') cDot++;
+            else if (wantRel) cRel++;
+            else cRelNo++;
             return;
           }
         }
       }
       // ② 站不住（第一次挂 / 老位置被新出现的盒子占了 / 宿主被 React 回收）⇒ 重新挑宿主与落点
       let pick = badgePick(anchor, refEl, need);
-      // 装不下的退让次序（v0.11.9 起回到两级）：先丢比例标签，最后只保那颗钮 —— 用户圈的位置是那颗标记，
-      // 附加信息不许多到盖住页面自己的东西。关系标签不在这条链里了：它住在名字行，不占这条缝（上面已画）。
-      if (rt && pick.place.form !== 'full') {
-        rt = null; need = needOf(null);
-        pick = badgePick(anchor, refEl, need);   // 退回去只量那颗钮：宁可少一个标签，也不许盖住页面自己的东西
-      }
+      // v0.12.12：状态标签始终保留（永不因窄缝丢失）；极窄缝时 badgeFit 自己退成 dot 形态，仍表状态。
+      // 拉黑钮已迁到悬浮弹窗，行内不再有「先丢标签保钮」的退让（那正是长昵称把互关挤没的根因）。
+      const wantRel = rel0;
+      const wantRt = null;   // 百分比只在悬浮弹窗里，行内不再画
       if (!pick.host) {
         // 出不了也得分清为什么：④ 住在 X 的可点元素里（列表页整行就是一颗关注钮）与 空白真放不下
         // 是两回事，混在一个计数里就没法从面板判断「这页本来不该有」还是「我的算法没量到空白」（RL-11）。
@@ -6623,9 +6851,10 @@
       if (!badgeEnsureHost(host)) return;
       const hr = geoRect(host) || { left: 0, top: 0, width: 0, height: 0 };
       cOk++;
+      // 状态标签始终保留：dot 形态记 cDot；有关系标签记 cRel；空白占位记 cRelNo（不重算 wantRt）
       if (place.form === 'dot') cDot++;
-      else if (rt) { cRatio++; if (rt.stale) cRatioOld++; }
-      if (place.form === 'full' && !rt) cRatioNo++;
+      else if (wantRel) cRel++;
+      else cRelNo++;
       if (n) {
         // 「挪」只记真的动了的：换了宿主层、或 left 变了。重挑一次而两层都一样 ⇒ 不算挪（这个数
         // 就是用户那句「还在跑吗」的仪表，掺水就白测了）。
@@ -6644,7 +6873,7 @@
         try { host.append(n); } catch (e) { return; }
       }
       if (!badgePlace(n, host, place, rr, hr)) return;
-      badgePaint(n, h, nameTxt, bad, place.form, rt);
+      badgePaint(n, h, nameTxt, bad, place.form, wantRt, wantRel);
     });
     // 趟末清孤儿：这一趟没有任何一行领走的自家节点 = 那一行已经不在这一页了（React 摘了行、筛帖了、
     // 或这一层现在判「放不下」）。只认自己的 data-xprobe 记号，X 的节点一个不碰。
@@ -6948,6 +7177,23 @@
     fabFoldApplied = '';   // 强制下一趟重写显隐（本趟立刻跟手，不等 1.2 秒节拍）
     fabBtn();
   }
+  // v0.12.9：每颗钮单独显隐。配置里记 false = 关掉（display:none，flex 里不占位）；没记 = 显示。
+  function fabVisGet() {
+    try {
+      const v = GM_getValue(FABVIS_KEY, null);
+      return (v && typeof v === 'object') ? v : {};
+    } catch (e) { return {}; }
+  }
+  function fabVisOn(id) { return fabVisGet()[id] !== false; }
+  function setFabVis(id, on) {
+    if (FAB_VIS_IDS.indexOf(id) < 0) return { ok: false, why: '这颗钮不支持单独关闭' };
+    const v = fabVisGet();
+    if (on) delete v[id]; else v[id] = false;
+    try { GM_setValue(FABVIS_KEY, v); } catch (e) { /* 本次会话内生效 */ }
+    fabFoldApplied = '';   // 强制下一趟把显隐影子重写（关掉的当场摘、不再占 flex 的位）
+    fabBtn();
+    return { ok: true, id: id, on: !!on };
+  }
   // R2 拖动：落点存 fabpos，恢复/落点一律过 fabClampPos 钉在视口内（窗口缩小、换屏不许跑到屏幕外）。
   function fabPosGet() {
     try {
@@ -7037,9 +7283,11 @@
       // 竖排贴同一条边、从它们上方起排：加栏不加宽，与页面自带的列对齐而不是叠在上面。
       bar = el('div', {
         position: 'fixed', right: '14px', bottom: '210px', zIndex: '2147483647',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
-        background: UI_TOK.panel, backdropFilter: UI_TOK.blur, border: '1px solid ' + UI_TOK.line,
-        borderRadius: UI_TOK.rRail, padding: '9px 7px', boxShadow: UI_TOK.shadow, userSelect: 'none',
+        // v0.12.9 用户点名「间距太宽」：6px → 3px，柱内边距也收紧；钮本身黑底白图，
+        // 玻璃柱退成一层透明托盘（grok 那几颗是各自独立的黑钮，没有厚玻璃外壳）。
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+        background: 'rgba(0,0,0,.45)', backdropFilter: UI_TOK.blur, border: '1px solid rgba(255,255,255,.08)',
+        borderRadius: '12px', padding: '6px 5px', boxShadow: UI_TOK.shadow, userSelect: 'none',
       });
       bar.id = FABBAR_ID;
       // 悬停/点亮态只对自家柱内生效（class 名挂在自家 fixed 节点上，与 FABBAR_ID 同一面暴露——
@@ -7047,7 +7295,7 @@
       // 方案 A 的「认得出」：全称住进 data-tip，hover 时由 ::after 绝对定位向左浮出。
       // 两条硬规矩（v0.8.12 真机账）：① 标签向左出，不被 x.com 右缘裁掉；② 脱离文档流，
       // 轨道宽度恒定、展开不挤动其它行。伪元素不进 textContent、不占节点数，自检的拼接判据不受影响。
-      bar.appendChild(el('style', {}, '#' + FABBAR_ID + ' .ysy-fab:hover{background:rgba(26,34,44,.95)}'
+      bar.appendChild(el('style', {}, '#' + FABBAR_ID + ' .ysy-fab:hover{background:#15181d;border-color:rgba(255,255,255,.32)}'
         + '#' + FABBAR_ID + ' .ysy-fab::after{content:attr(data-tip);position:absolute;'
         +   'right:calc(100% + 8px);top:50%;z-index:2;pointer-events:none;white-space:nowrap;'
         +   'font:12px system-ui,sans-serif;line-height:1.4;padding:6px 10px;border-radius:5px;'
@@ -7055,8 +7303,9 @@
         +   'opacity:0;visibility:hidden;transform:translateY(-50%) translateX(6px);'
         +   'transition:opacity .18s ease,transform .18s ease,visibility .18s}'
         + '#' + FABBAR_ID + ' .ysy-fab:hover::after{opacity:1;visibility:visible;transform:translateY(-50%) translateX(0)}'
-        + '#' + FABBAR_ID + ' .ysy-fab-on{border-color:' + UI_TOK.accDim
-        + ';box-shadow:inset 2px 0 0 0 ' + UI_TOK.acc + ',' + UI_TOK.shadow + '}'
+        // v0.12.9：点亮态从「绿字」改成「绿描边 + 绿色微光」，符号本身保持白（grok 白图不翻色）
+        + '#' + FABBAR_ID + ' .ysy-fab-on{border-color:' + UI_TOK.acc
+        + ';box-shadow:0 0 0 1px ' + UI_TOK.acc + ',0 0 10px rgba(78,201,138,.45)}'
         + '@keyframes ysyFabPulse{0%,100%{opacity:.35}50%{opacity:1}}'
         + '#' + FABBAR_ID + ' .ysy-dot{animation:ysyFabPulse 2.4s ease-in-out infinite}'));
       // 探针圆点：整列在跑的那颗心跳（纯样式动画，不派事件、不请求）
@@ -7086,31 +7335,33 @@
         });
         return x;
       };
-      bar.append(mk(FOLD_BTN_ID, '探', '展开/收起钮排', '折叠/展开整根钮排（art-021 R1：默认只露这一颗，点一下全展开，再点收起）', fabFoldToggle));
-      bar.append(mk(FBTN_ID, '关', '本页用户名单', '本页用户列表（已关注/未关注切换；点条目滚动到那条帖子的位置，不导航）', toggleFlist));
-      bar.append(mk(CBTN_ID, '榜', '本页曝光榜', '开/收本页曝光榜卡片（右上角；详面板在卡片头「详」）', toggleCard));
+      bar.append(mk(FOLD_BTN_ID, FAB_GLYPH[FOLD_BTN_ID].fold, '展开/收起钮排', '折叠/展开整根钮排（默认只露这一颗，点一下全展开，再点收起）', fabFoldToggle));
+      bar.append(mk(FBTN_ID, FAB_GLYPH[FBTN_ID], '本页用户名单', '本页用户列表（已关注/未关注切换；点条目滚动到那条帖子的位置，不导航）', toggleFlist));
+      bar.append(mk(CBTN_ID, FAB_GLYPH[CBTN_ID], '本页曝光榜', '开/收本页曝光榜卡片（右上角；详面板在卡片头「详」）', toggleCard));
       // v0.11.18 art-020 第八颗：本页热点（按每小时浏览量排榜；点条目只在榜内高亮、不滚动页面）。
-      bar.append(mk(HOTBTN_ID, '热', '本页热点', '本页热点榜：把当前页面已加载的推文按每小时浏览量降序排列；只读 DOM、只在本机算，点条目只在榜内高亮、不滚动页面', hotToggle));
-      bar.append(mk(RBTN_ID, '回', '待回关', '', openFollowback));
-      // v0.9.0 第五颗：标杆窗口（人数在右上角小角标；方案 A 起钮面单字「杆」，全称在 hover 标签）
-      bar.append(mk(BBTN_ID, '杆', '标杆账号', '标杆名单窗口（**按人**的那本账，与下面「标帖」那本按条的账分开；'
+      bar.append(mk(HOTBTN_ID, FAB_GLYPH[HOTBTN_ID], '本页热点', '本页热点榜：把当前页面已加载的推文按每小时浏览量降序排列；只读 DOM、只在本机算，点条目只在榜内高亮、不滚动页面', hotToggle));
+      bar.append(mk(RBTN_ID, FAB_GLYPH[RBTN_ID], '待回关', '', openFollowback));
+      // v0.9.0 第五颗：标杆窗口（人数在右上角小角标；v0.12.9 起钮面是 ◎ 符号，全称在 hover 标签）
+      bar.append(mk(BBTN_ID, FAB_GLYPH[BBTN_ID], '标杆账号', '标杆名单窗口（**按人**的那本账，与下面「标帖」那本按条的账分开；'
         + '按粉丝/曝光等排序，打开就按上次选的轴排好；'
         + '点某行在下方展开 TA 的帖子；分类在这一窗里改。只读台账与本机库，不滚页面、不导航、不请求 X）', toggleBench));
       // v0.9.3 第六颗：标杆帖子窗口（用户点名「右下角分别是标杆账号、标杆帖子，点账号开账号的窗、点帖子开帖子的窗」）
-      bar.append(mk(BPBTN_ID, '帖', '标杆帖子', '标杆帖子窗口（这条帖子的账，与上面「标杆」那本按人的账是分开的两本；'
+      bar.append(mk(BPBTN_ID, FAB_GLYPH[BPBTN_ID], '标杆帖子', '标杆帖子窗口（这条帖子的账，与上面「标杆」那本按人的账是分开的两本；'
         + '按曝光/评论/赞/互动/发帖时间排序，打开就按上次选的那根轴排好。只读台账与本机库，不滚页面、不导航、不请求 X）', toggleBenchP));
       // v0.11.4 第七颗：AI 回帖。这颗与前面六颗唯一的不同是**按闸显隐**——设置里「本机模型」关着时它
       // display:none（节点常驻、不占位，与徽标那种「缝进页面」不是一回事），开着才露面。
       // 关着还留一颗能点的入口 = 骗人去点一条注定不发请求的路；整颗摘掉又会在排里跳位，所以是显隐。
-      const aiEl = mk(AIBTN_ID, '稿', 'AI 回帖草稿', 'AI 回帖草稿（只有帖子详情页那一条帖子有明确目标；把它的原文发给你自己机器上的模型，'
+      const aiEl = mk(AIBTN_ID, FAB_GLYPH[AIBTN_ID], 'AI 回帖草稿', 'AI 回帖草稿（只有帖子详情页那一条帖子有明确目标；把它的原文发给你自己机器上的模型，'
         + '换一稿草稿让你复制到回复框里。草稿只是页面上的一段字：改不改、贴不贴、发不发都是你的动作——'
         + '这一腿不点页面任何钮、不往回复框写字，请求也只走原生宿主那一条回环出口）', toggleAiCard);
       // art-021 R1 起这颗显隐 = 闸开 且 柱子没折叠（折叠时它跟其余业务钮一起藏着，展开那趟由下面的写手放出来）
-      aiEl.style.display = (aiGateOn() && !fabFoldGet()) ? 'flex' : 'none';
+      aiEl.style.display = (aiGateOn() && !fabFoldGet() && fabVisOn(AIBTN_ID)) ? 'flex' : 'none';
+      // 影子只记「闸读到了什么」（aiGateOn），不掺折叠/单颗开关：那些是显示层的事。
+      // 这样变异掉建排那行时，DOM 会露面而账仍写 none —— 正是「骗人去点」变异要抓的分家。
       aiBtnApplied = aiGateOn() ? 'flex' : 'none';
       bar.append(aiEl);
       bar.append(sep());
-      bar.append(mk(FAB_ID, '观', '打开探针面板', '', openPanel));
+      bar.append(mk(FAB_ID, cdLetter(), '打开探针面板', '', openPanel));
       fabDragWire(bar);   // art-021 R2：整根柱子可拖（阈值 4px 区分拖/点，落库 fabpos）
       document.documentElement.appendChild(bar);
       fabPosApply(bar);   // 恢复拖动落点（fabpos → clamp 视口内 → 写 right/bottom；没有存档就是右缘默认位）
@@ -7120,7 +7371,7 @@
     const rb2 = document.getElementById(RBTN_ID);
     if (rb2) {
       const n = followbackCount();
-      if (rb2.textContent !== '回' + (n ? n : '')) {
+      if (rb2.textContent !== FAB_GLYPH[RBTN_ID] + (n ? n : '')) {
         fabCountSet(RBTN_ID, n);
         rb2.title = '待回关 ' + n + ' 人：TA 关注了你、你还没回关（全库口径，去掉已拉黑；账来自你进过的粉丝列表页）。'
           + '点这里在名单「未关」那一列里只看这些人（v0.11.3：待回关不再是单独一列，并进未关）；再点一下取消筛选。';
@@ -7134,20 +7385,34 @@
     if (bp2 && bp2.textContent !== benchPFabText()) fabCountSet(BPBTN_ID, benchPCount());
     // v0.11.4 第七颗的显隐（只在闸的影子真翻了那一趟写一次，其余趟一个字不动 DOM——与角标同纪律）
     // art-021 R1 起 = 闸 且 没折叠：折叠/展开翻面那一趟也由这里跟着写，两套写手不打架。
-    const aiWant = (aiBtnShown() && !fabFoldGet()) ? 'flex' : 'none';
+    // v0.12.9：三道条件叠加 —— 本机模型闸(aiBtnShown) ∧ 没折叠 ∧ 用户没单独关掉这颗
+    const aiWant = (aiBtnShown() && !fabFoldGet() && fabVisOn(AIBTN_ID)) ? 'flex' : 'none';
     if (aiBtnApplied !== aiWant) {
       const an = document.getElementById(AIBTN_ID);
       if (an) an.style.display = aiWant;
       aiBtnApplied = aiWant;
     }
-    // art-021 R1：折叠态的显隐（「探」常驻，其余业务钮 + 分隔线跟着折叠翻面；影子没翻面那趟一个字不动）
+    // 折叠态 + v0.12.9 每颗单独关，叠在同一道显隐写手里（影子没翻面那趟一个字不动）。
     const foldWant = fabFoldGet() ? 'folded' : 'open';
-    if (fabFoldApplied !== foldWant) {
-      fabFoldApplied = foldWant;
+    // 影子签名把「每颗的开/关」也编进去：设置里勾掉一颗，这一趟就会重写显隐。
+    const visSig = FAB_VIS_IDS.map((id) => id + ':' + (fabVisOn(id) ? '1' : '0')).join('|');
+    const foldSig = foldWant + '/' + visSig;
+    if (fabFoldApplied !== foldSig) {
+      fabFoldApplied = foldSig;
+      // AIBNT_ID 不在这里——它有独立的 aiGate 写手（下面），避免两套写手互相覆盖。
       [FBTN_ID, CBTN_ID, HOTBTN_ID, RBTN_ID, BBTN_ID, BPBTN_ID, FAB_ID, FABSEP_ID].forEach((id) => {
         const n = document.getElementById(id);
-        if (n) n.style.display = (foldWant === 'folded') ? 'none' : 'flex';
+        if (!n) return;
+        // 折叠时全藏；展开时按每颗开关（分隔线跟着「观」：观被关掉则分隔线也藏，不留一道孤线）
+        let show;
+        if (foldWant === 'folded') show = false;
+        else if (id === FABSEP_ID) show = fabVisOn(FAB_ID);
+        else show = fabVisOn(id);
+        n.style.display = show ? 'flex' : 'none';
       });
+      // 折叠钮符号随状态翻：折叠态 ▾（点它展开）、展开态 ▴（点它收起）
+      const foldLab = fabLab[FOLD_BTN_ID];
+      if (foldLab) foldLab.textContent = FAB_GLYPH[FOLD_BTN_ID][foldWant === 'folded' ? 'fold' : 'open'];
     }
     // 开着的面板对应的钮点亮（v0.9.5）：绿字 + 左缘刻线（style 里的 .ysy-fab-on）。
     // 花名册只在变的那一趟写——节拍器每 1.2 秒路过一次，没变就不写。
@@ -7212,7 +7477,9 @@
     // 同一秒内节拍器（1.2s）与读秒（1s）两条腿一起进来也只写一次；③ 只改自己的文本与颜色字号，
     // 不碰 X 的节点、不派事件、不发请求、不改布局（fixed 排不参与页面排版）。精确到账的口径仍在面板顶部横幅。
     const cdMs = bad ? fabFreeMs(s) : (cool ? s.coolLeft : 0);
-    const txt = (bad || cool) ? fabCd(cdMs) : '观';
+    // v0.12.9：空闲态从汉字「观」改成 ◉ 符号（grok 白图同款）；读秒态仍是数字（功能不变）。
+    const txt = (bad || cool) ? fabCd(cdMs) : cdLetter();
+    // 符号白、读秒按状态上色（琥珀/红）；空闲 ◉ 走绿（可关注）。
     const color = bad ? UI_TOK.red : (cool ? UI_TOK.amber : (peer ? UI_TOK.amber : UI_TOK.acc));
     // 环形读秒（v0.9.5，用户拍板的原型：环走满一圈 = 冷却结束）：ring span 是一颗 conic-gradient
     // 进度盘，用 mask 挖成环带贴在钮外缘。绿「观」时不画环（没在等东西就别转）；到顶=红环走满；
@@ -7261,7 +7528,8 @@
       if (lab) {
         lab.textContent = txt;
         lab.style.color = color;
-        lab.style.font = fabFontSty(fabSizeEff(), txt);   // 三位数比一个汉字宽 ⇒ 字号按字数退一档，数字不贴边
+        // v0.12.9：空闲态是 ◉ 符号 ⇒ 走符号字号；读秒态是数字 ⇒ 仍走原退档函数（三位数不贴边）
+        lab.style.font = (bad || cool) ? fabFontSty(fabSizeEff(), txt) : (fabGlyphPx(fabSizeEff()) + 'px ' + FAB_FONT);
       } else {
         b.textContent = txt; b.style.color = color;        // 兜底（排不是 fabParts 建的旧存留节点）
       }
@@ -7274,9 +7542,55 @@
     }
     return b;
   }
-  // ---------- ART020 本页热度榜（口径参考，未复制代码）----------
-  // 只把「当前 DOM 已经加载出来的」推文按每小时浏览量排榜；数据只从 DOM 读、只在本机算，
-  // 不新增网络出口、不点击、不滚动。口径与阈值见 skills/SKILL.md RL-28。
+  // ---------- ART020 本页热度榜（v0.12.7 数据层对译参考插件 X Viral Monitor）----------
+  // v0.12.7 口径升级（RL-28）：主数据源 = 主世界只读信使 bridge.js 从 X 自己 GraphQL 回包里收割的
+  // 精确整数（views.count + legacy.* 五项 + created_at，按 tid 对齐）；页面 DOM 文字退成兜底。
+  // 仍零新出口、零新权限、不发一个请求、不点不滚；数据到了走既有 180ms 静默窗重画（RL-30）。
+  // netTweets：tid → {views,likes,rt,replies,bm,createdMs,screenName,at}，只由桥的 tweetpush / 问询回话写入。
+  const netTweets = Object.create(null);
+  function hotNetMerge(tweets) {
+    if (!tweets || typeof tweets !== 'object') return 0;
+    let n = 0;
+    for (const k of Object.keys(tweets)) {
+      if (!/^\d{6,25}$/.test(k)) continue;             // 只认真帖子号，别让杂物进榜
+      const d = tweets[k];
+      if (!d || typeof d !== 'object') continue;
+      const views = d.views, createdMs = d.createdMs;
+      if (!isFinite(views) || views < 0 || !(createdMs > 0)) continue;
+      const num = (x) => { const z = parseInt(x, 10); return isFinite(z) && z >= 0 ? z : 0; };
+      const v = { views: views, likes: num(d.likes), rt: num(d.rt), replies: num(d.replies),
+        bm: num(d.bm), createdMs: createdMs, screenName: String(d.screenName || '').replace(/^@/, ''),
+        at: Date.now() };
+      const old = netTweets[k];
+      if (old && old.views === v.views && old.likes === v.likes && old.rt === v.rt
+        && old.replies === v.replies && old.bm === v.bm) continue;
+      netTweets[k] = v; n++;
+    }
+    return n;
+  }
+  // 精确读数但 DOM 解析不出（详情页 analytics 无 aria-label 且没 time 节点）时，用桥读数造一整行。
+  function hotFromNet(tid, net, art) {
+    const now = Date.now();
+    const hours = Math.max((now - net.createdMs) / 3600000, 0.1);
+    const velocity = net.views / hours;
+    const f = { views: net.views, likes: net.likes, rt: net.rt, replies: net.replies, bm: net.bm };
+    const tier = hotTier(velocity);
+    let name = net.screenName ? '@' + net.screenName : '';
+    let text = '';
+    if (art) {
+      const nameEl = art.querySelector('[data-testid="User-Name"]');
+      if (nameEl) name = name || (txt(nameEl).split(/[\s@·]/).filter(Boolean)[0] || '');
+      const textEl = art.querySelector('[data-testid="tweetText"]');
+      if (textEl) text = txt(textEl);
+    }
+    if (!name) name = clip(text, 60) || ('@' + String(tid).slice(0, 8));
+    return {
+      tid: tid, name: name, text: clip(text, 200), views: net.views, likes: net.likes, rt: net.rt,
+      replies: net.replies, bm: net.bm, createdMs: net.createdMs, hours: hours, velocity: velocity,
+      score: hotScore(f, velocity), tier: tier.key, color: tier.color, icon: tier.icon,
+      viewLabel: hotFmt(net.views), velLabel: hotFmt(velocity) + '/h',
+    };
+  }
   function hotFinite(x) { return isFinite(x) ? x : 0; }
   function hotFirstNum(src) {
     if (src == null) return null;
@@ -7357,22 +7671,39 @@
       const h = String(analytics[j].getAttribute('href') || '');
       if (own(analytics[j]) && (!tid || h.indexOf('/status/' + tid + '/analytics') >= 0)) { viewEl = analytics[j]; break; }
     }
-    const views = viewEl ? hotFirstNum(viewEl.getAttribute('aria-label')) : null;
-    const timeEl = qs('time[datetime]');
-    const dt = timeEl ? timeEl.getAttribute('datetime') : '';
-    const createdMs = dt ? Date.parse(dt) : NaN;
+    // v0.12.7 精确读数优先：桥按 tid 对齐的 GraphQL 整数（views/likes/rt/replies/bm/createdMs）。
+    // 桥没读到才退回 DOM 三档兜底（下面），保留「页面自己显示什么就用什么」的老口径不编 0。
+    const net = netTweets[tid] || null;
+    let views = net ? net.views : null;
+    let dt = (() => { const t = qs('time[datetime]'); return t ? (t.getAttribute('datetime') || '') : ''; })();
+    let createdMs = net ? net.createdMs : (dt ? Date.parse(dt) : NaN);
+    if (views == null) {
+      // ① aria-label 首数字（首页/评论行的老路径）
+      views = viewEl ? hotFirstNum(viewEl.getAttribute('aria-label')) : null;
+      // ② 详情页主贴的 analytics 链接没有 aria-label，数字只在可见文字里（「296 查看」）—— art-023 根因
+      if (views == null && viewEl) views = hotFirstNum(txt(viewEl));
+      // ③ 少数行的聚合 group 标签（「11 回复、9 喜欢、296 次观看」），末项按「次观看/次查看/views」认
+      if (views == null) {
+        const g = qs('[role="group"]');
+        const ga = g ? String(g.getAttribute('aria-label') || '') : '';
+        const vm = ga.match(/([\d,\s\u00a0\u202f]+)\s*(?:次观看|次查看|views?)/i);
+        if (vm) views = hotFirstNum(vm[1]);
+      }
+    }
+    if (!(createdMs > 0) && dt) createdMs = Date.parse(dt);
     if (views == null || !(createdMs > 0)) return { skip: 'missing', tid: tid, views: views, dt: dt || null };
     const hours = Math.max((now - createdMs) / 3600000, 0.1);
     const velocity = views / hours;
     const likeEl = qs('[data-testid="like"], [data-testid="unlike"]');
     const rtEl = qs('[data-testid="retweet"]');
     const repEl = qs('[data-testid="reply"]');
-    const likes = likeEl ? (hotFirstNum(likeEl.getAttribute('aria-label')) || 0) : 0;
-    const rt = rtEl ? (hotFirstNum(rtEl.getAttribute('aria-label')) || 0) : 0;
-    const replies = repEl ? (hotFirstNum(repEl.getAttribute('aria-label')) || 0) : 0;
+    const likes = net ? net.likes : (likeEl ? (hotFirstNum(likeEl.getAttribute('aria-label')) || 0) : 0);
+    const rt = net ? net.rt : (rtEl ? (hotFirstNum(rtEl.getAttribute('aria-label')) || 0) : 0);
+    const replies = net ? net.replies : (repEl ? (hotFirstNum(repEl.getAttribute('aria-label')) || 0) : 0);
     const groupEl = qs('[role="group"]');
     const gnums = groupEl ? hotAllNums(groupEl.getAttribute('aria-label')) : [];
-    const bm = gnums.length >= 5 ? gnums[gnums.length - 2] : 0;
+    // 收藏：桥读数优先；DOM 兜底仍按「≥5 个取倒数第二」（art-023 记录的老坑，有桥读数后不再触发）
+    const bm = net ? net.bm : (gnums.length >= 5 ? gnums[gnums.length - 2] : 0);
     // 用户名：显示名第一段 → @handle → 正文前 60 字。
     let name = '';
     const nameEl = qs('[data-testid="User-Name"]');
@@ -7447,6 +7778,9 @@
         padding: '1px 3px', borderRadius: '4px', border: '1px solid ' + UI_TOK.line }, r.icon + ' ' + r.velLabel);
       b.setAttribute('class', HOT_BADGE_CLS);
       b.setAttribute('data-xprobe', 'hotvel');
+      // v0.12.8：行内徽标（详情页帖子右侧 + 评论区）也支持悬浮详情卡，数据取**本条帖子**而非主贴。
+      // 悬浮是用户主动事件、不在渲染期往 X 节点写东西（不破 RL-30）；监听只挂自家徽标（RL-16）。
+      bindDetHover(b, () => hotArtData(art));
       art.appendChild(b);
       made++;
     });
@@ -7458,7 +7792,11 @@
     if (on) { hotBadgeRender(); hotDetStep(); } else { hotBadgeSweep(); hotDetSweep(); }
     return { ok: true, hotbadge: on };
   }
-  function hotBadgeAuto() { if (hotBadgeGet()) { hotBadgeRender(); hotDetStep(); } }
+  // v0.12.7 RL-30 理由：桥推送一密，热度徽标若在 X 增量挂评论的中途写行，就是用户点名的页面抖动。
+  // 闸放在这层（不是 renderBlocks 首行，那里有条固定窗口的源码断言）：每次节拍/推送调它都先问
+  // relDomBusy，X 还在挂节点就整趟不画；setHotBadge 的用户动作直接调 hotBadgeRender/hotDetStep 不经此，
+  // 所以用户拨开关仍当场生效、自检 force 不受限。
+  function hotBadgeAuto() { if (!hotBadgeGet() || relDomBusy()) return 0; hotBadgeRender(); hotDetStep(); return 1; }
   // ---------- v0.12.3 art-023 帖子详情页页头「流量徽标 + 悬停详情卡」 ----------
   // 页头定位沿用 benchPostRow 的实锤路径（app-bar-back 往上爬到含 h2 那层，绝不拿 document 的 h2 冒充）；
   // 徽标内联插在 h2 之后（兄弟插入不动 X 的布局，纪律同 rel 芯：没变不写、位置不对才搬）；
@@ -7467,11 +7805,50 @@
   let hotDetPopKey = '';       // 弹卡内容指纹（tid + 各栏值），没变不重写
   let hotDetHideT = 0;         // 延迟隐藏定时器：离开徽标 200ms 才收，中途进弹卡会取消（给它留挪鼠标的路）
   function hotDetData() {
-    const art = document.querySelector('article[data-testid="tweet"]');
+    // v0.12.7：主贴按 URL 的 status id 精确定位（对译参考插件 getStatusIdFromLocation），不再盲取
+    // 第一条 article —— 评论区插队/reply 排前时第一条未必是主贴。逐个 article 找 href 命中 sid 的。
+    const sid = statusIdFromPath(location.pathname);
+    let art = null;
+    if (sid) {
+      const arts = document.querySelectorAll('article[data-testid="tweet"]') || [];
+      for (let i = 0; i < arts.length; i++) {
+        const links = arts[i].querySelectorAll('a[href*="/status/"]') || [];
+        for (let j = 0; j < links.length; j++) {
+          const mm = String(links[j].getAttribute('href') || '').match(/\/status\/(\d+)/);
+          if (mm && mm[1] === sid) { art = arts[i]; break; }
+        }
+        if (art) break;
+      }
+    }
+    if (!art) art = document.querySelector('article[data-testid="tweet"]');  // 兜底：URL 没 id 或 article 还没链上
+    if (!art && !netTweets[sid]) return null;
+    const net = netTweets[sid] || (art ? netTweets[hotTidOf(art)] : null) || null;
+    // 精确读数在手：哪怕 DOM 解析会 skip（详情页 analytics 无 aria-label），也用桥读数造整行。
+    if (net) return hotFromNet(sid || hotTidOf(art), net, art);
     if (!art) return null;
     const r = hotParseArticle(art, Date.now(), null);
     if (!r) return null;
     return r.skip ? { skip: r.skip, tid: r.tid || '' } : r;
+  }
+  // 从一条 article 取帖子号（详情卡兜底用；与 hotParseArticle 同口径，取 status 链接首数字）
+  function hotTidOf(art) {
+    const links = art.querySelectorAll('a[href*="/status/"]') || [];
+    for (let i = 0; i < links.length; i++) {
+      const mm = String(links[i].getAttribute('href') || '').match(/\/status\/(\d+)/);
+      if (mm) return mm[1];
+    }
+    return '';
+  }
+  // v0.12.8：从「任意一条 article」取详情行 —— 行内徽标悬浮用，数据取该帖子本身，不再固定主贴。
+  // 精确读数优先（netTweets 按这条帖子的 tid 对齐），DOM 兜底（hotParseArticle 解析这颗徽标所在的 article）。
+  function hotArtData(art) {
+    if (!art) return null;
+    const tid = hotTidOf(art);
+    const net = tid ? netTweets[tid] : null;
+    if (net) return hotFromNet(tid, net, art);
+    const r = hotParseArticle(art, Date.now(), null);
+    if (!r) return null;
+    return r.skip ? { skip: r.skip, tid: r.tid || tid } : r;
   }
   function hotDetDate(ms) {
     const d = new Date(ms), p = (n) => (n < 10 ? '0' + n : String(n));
@@ -7490,6 +7867,153 @@
       ['爆炸指数', full ? full.score + '/100' : '—'],
       ['发布时间', full ? hotDetDate(full.createdMs) : '—'],
     ];
+  }
+  // ---------- v0.12.11 关系标签悬浮弹卡（关注百分比 + 三态时间）----------
+  // 用户点名「弹窗内容要跟着关系状态走」：互关 / 他单向 / 我单向 三段逻辑不能混。
+  //   · 互关：给三段时间 —— 我关注 TA 的时间、TA 关注我的时间、互关时间（两者较晚的那一件）；不再写「未回关」。
+  //   · 他单向（TA 关注我、我没回关）：给 TA 关注我的时间 + 差异（TA 已关注我多少天、我还没回关）。
+  //   · 我单向（我关注 TA、TA 没回关）：给我关注 TA 的时间 + 他没回关我的时间差。
+  //   · 关系判不出：退回「关注事件」一行，不编未回关（避免互关的人误报「未回关 N 天」，见截图反馈）。
+  // 数据全来自本机台账：百分比 = ratioInfo；我关注 TA = followStartAt；TA 关注我 = themFollowingAt；
+  // 评论数本版不显示（本机与 pg16 都没有评论关系明细，见 handoff），留空不是编数。
+  let relBadgePop = null, relBadgeHideT = 0, relBadgeKey = '';
+  function relBadgeTip(h, rel) {
+    const k = String(h || '');
+    const key = rel ? rel.key : '';
+    const rt = ratioInfo(k);
+    const meF = followStartAt(k), themF = themFollowingAt(k);
+    const lines = ['@' + k + ' · ' + (rel ? rel.lab : '关系未知')];
+    lines.push(rel ? rel.tip : '');
+    lines.push(rt ? ('关注百分比：' + rt.shown + '（正在关注 ' + rt.fow + ' / 关注者 ' + rt.fans + '）') : '关注百分比：本机没有 TA 的粉丝数（悬停过 TA 头像或进过 TA 主页才会有）');
+    if (key === 'mutual') {
+      lines.push('我关注 TA：' + (meF ? meF.day : '本机没记到'));
+      lines.push('TA 关注我：' + (themF ? themF.day : '本机没记到'));
+      const m = mutualAt(meF, themF);
+      lines.push('互关时间：' + (m ? m.day + m.note : '两侧都没记到'));
+    } else if (key === 'them') {
+      lines.push('TA 关注我：' + (themF ? themF.day : '本机没记到'));
+      const d = themF ? daysSince(themF.ms) : -1;
+      if (d >= 0) lines.push('你还没回关：TA 已关注你 ' + d + ' 天');
+    } else if (key === 'me') {
+      lines.push('我关注 TA：' + (meF ? meF.day : '本机没记到'));
+      const nf = noFollowbackDays(k);
+      lines.push(nf ? ('已关注 ' + nf.d + ' 天，TA 还没回关我') : '本机记不到未回关天数');
+    } else {
+      lines.push(meF ? ('关注事件：' + meF.day + '开始关注 TA · ' + meF.src) : '关注事件：本机没有 TA 的关注起始记录');
+    }
+    return lines.filter(Boolean).join('\n');
+  }
+  function relBadgeRows(h, rel) {
+    const k = String(h || '');
+    const key = rel ? rel.key : '';
+    const rt = ratioInfo(k);
+    const meF = followStartAt(k), themF = themFollowingAt(k);
+    const rows = [['关系', rel ? rel.lab : '—']];
+    rows.push(['关注百分比', rt ? (rt.shown + '（' + rt.fow + '/' + rt.fans + '）' + (rt.stale ? ' · ' + rt.ageDays + '天前读到' : '')) : '—']);
+    if (key === 'mutual') {
+      rows.push(['我关注 TA', meF ? meF.day : '—']);
+      rows.push(['TA 关注我', themF ? themF.day : '—']);
+      const m = mutualAt(meF, themF);
+      rows.push(['互关时间', m ? (m.day + m.note) : '两侧都没记到']);
+    } else if (key === 'them') {
+      // 他单向：TA 关注了我，我没回关 ⇒ 给 TA 关注我的时间 + 至今多久（差异）
+      rows.push(['TA 关注我', themF ? themF.day : '—']);
+      const d = themF ? daysSince(themF.ms) : -1;
+      rows.push(['已关注我', d >= 0 ? (d + ' 天（TA 关注我、你还没回关）') : '本机没记到 TA 进你粉丝列表的时间']);
+    } else if (key === 'me') {
+      // 我单向：我关注了 TA，TA 没回关 ⇒ 给我关注时间 + 未回关时间差
+      rows.push(['我关注 TA', meF ? meF.day : '—']);
+      const nf = noFollowbackDays(k);
+      rows.push(['未回关', nf
+        ? (nf.d + ' 天（已关注 ' + nf.d + ' 天，TA 还没回关我）')
+        : (meF ? '本机记到了关注日、但算不出未回关天数' : '本机没记到我关注 TA 的起算日')]);
+    } else {
+      // 关系判不出：退回原「关注事件」一行，不编未回关（互关误报的根因就在这）
+      rows.push(['关注事件', meF ? meF.day : '—']);
+      if (meF) rows.push(['事件来源', meF.src]);
+    }
+    return rows;
+  }
+  function relBadgePopHide() {
+    if (relBadgeHideT) { clearTimeout(relBadgeHideT); relBadgeHideT = 0; }
+    relBadgeHideT = setTimeout(() => {
+      relBadgeHideT = 0;
+      if (relBadgePop) { try { relBadgePop.remove(); } catch (e) { /* 已被摘 */ } }
+      relBadgePop = null; relBadgeKey = '';
+    }, 200);
+  }
+  function relBadgePopShow(badge, h, rel) {
+    if (relBadgeHideT) { clearTimeout(relBadgeHideT); relBadgeHideT = 0; }
+    if (!relBadgePop || !relBadgePop.parentNode) {
+      relBadgePop = el('div', { position: 'fixed', zIndex: '2147483647', display: 'none',
+        background: UI_TOK.panel, backdropFilter: UI_TOK.blur, border: '1px solid ' + UI_TOK.line,
+        borderRadius: UI_TOK.rPanel, padding: '9px 11px', boxShadow: UI_TOK.shadow,
+        font: UI_TOK.font, color: UI_TOK.ink, minWidth: '200px', maxWidth: '340px', pointerEvents: 'auto' }, '');
+      relBadgePop.id = 'ysy-xprobe-ext-relpop';
+      relBadgePop.setAttribute('data-xprobe', 'relpop');
+      relBadgePop.addEventListener('mouseenter', () => { if (relBadgeHideT) { clearTimeout(relBadgeHideT); relBadgeHideT = 0; } });
+      relBadgePop.addEventListener('mouseleave', relBadgePopHide);
+      document.documentElement.appendChild(relBadgePop);
+    }
+    const rows = relBadgeRows(h, rel);
+    // v0.12.12：签名带 blocked 状态，拉黑/取消后弹窗当面重画（按钮字面跟着翻）；点完即收，下一拍 badge 重描红。
+    const sig = h + '|' + (isBlocked(h) ? '1' : '0') + '|' + rows.map((x) => x[1]).join('|');
+    if (relBadgeKey === sig) { relBadgePop.style.display = 'block'; return; }
+    relBadgeKey = sig;
+    Array.prototype.slice.call(relBadgePop.children || []).forEach((c) => { try { c.remove(); } catch (e) { /* 已被摘 */ } });
+    relBadgePop.appendChild(el('div', { font: '600 12px ' + FAB_FONT, color: rel ? (REL_TAG[rel.key] || REL_TAG.mutual).color : UI_TOK.ink, margin: '0 0 6px' },
+      '@' + h + ' · 关系详情'));
+    rows.forEach((row) => {
+      const line = el('div', { display: 'flex', justifyContent: 'space-between', gap: '16px', font: '11px ' + FAB_FONT, lineHeight: '1.75' }, '');
+      line.appendChild(el('span', { color: UI_TOK.inkFaint }, row[0]));
+      line.appendChild(el('span', { color: UI_TOK.ink }, row[1]));
+      relBadgePop.appendChild(line);
+    });
+    relBadgePop.appendChild(el('div', { color: UI_TOK.inkFaint, font: '10px ' + FAB_FONT, margin: '6px 0 0' }, '口径同「本页名单」· 评论数本机未采集 · v' + VER));
+    // v0.12.12：拉黑钮从行内迁到悬浮弹窗（解决长昵称把互关挤掉、行内钮占位问题）。弹窗 pointer-events:auto，
+    // 钮可点；点完立即收卡，下一拍 badge 重描红。手工账本（blocks 表）+ 面板标记，不动 X 的屏蔽/关注（RL-1）。
+    const blocked = isBlocked(h);
+    const blkBtn = el('button', {
+      type: 'button', cursor: 'pointer',
+      font: '600 11px ' + FAB_FONT, marginTop: '8px', padding: '4px 8px', borderRadius: '6px', width: '100%',
+      border: '1px solid ' + (blocked ? UI_TOK.red : UI_TOK.line),
+      background: blocked ? 'rgba(224,108,96,.16)' : 'transparent',
+      color: blocked ? UI_TOK.red : UI_TOK.ink,
+    }, blocked ? ('取消拉黑 @' + h) : ('拉黑 @' + h));
+    blkBtn.addEventListener('click', () => {
+      // 不拦事件（红线 [11x]：全文无 preventDefault/stopPropagation）：弹窗是自家 position:fixed 节点，
+      // 不在任何 <a> 里，点击不会触发导航；直接走 blockToggle + 收卡即可。
+      blockToggle(h, (badge && badge.getAttribute && badge.getAttribute('data-n')) || '');
+      relBadgePopHide();
+    });
+    relBadgePop.appendChild(blkBtn);
+    relBadgePop.style.display = 'block';
+  }
+  function relBadgePopPlace(badge) {
+    if (!relBadgePop) return;
+    const g = geoRect(badge), vw = (window && window.innerWidth) || 1280;
+    relBadgePop.style.right = Math.max(8, Math.round(vw - (g && g.right ? g.right : vw - 20))) + 'px';
+    relBadgePop.style.top = Math.round(g && g.bottom ? g.bottom + 6 : 60) + 'px';
+    relBadgePop.style.left = 'auto';
+  }
+  function bindRelBadgeHover(badge, h) {
+    if (badge.getAttribute('data-rb') === h) return;   // 同一个 handle 只绑一次，增量加载不重绑
+    badge.setAttribute('data-rb', h);
+    badge.addEventListener('mouseenter', () => {
+      // v0.12.12：关系标签 / 空白占位 / 红点 都接同一套弹窗 —— 关系判不出（空白）也照样弹，弹窗里含拉黑钮。
+      const relChipEl2 = badge.querySelector('[data-xprobe="rel"]');
+      const key = relChipEl2 ? (relChipEl2.getAttribute('data-relkey') || '') : '';
+      const rel = key ? { key: key, lab: relChipEl2.textContent, tip: relChipEl2.title } : null;
+      relBadgePopShow(badge, h, rel);
+      relBadgePopPlace(badge);
+    });
+    badge.addEventListener('mouseleave', relBadgePopHide);
+  }
+  function relBadgeSweep() {
+    let n = 0;
+    if (relBadgePop) { try { relBadgePop.remove(); n++; } catch (e) { /* 已被摘 */ } relBadgePop = null; relBadgeKey = ''; }
+    if (relBadgeHideT) { clearTimeout(relBadgeHideT); relBadgeHideT = 0; }
+    return n;
   }
   function hotDetPopHide() {
     if (hotDetHideT) { clearTimeout(hotDetHideT); hotDetHideT = 0; }
@@ -7544,51 +8068,24 @@
     hotDetPopPlace(badge);
     hotDetPop.style.display = 'block';
   }
-  function bindDetHover(chip) {
+  // v0.12.8：dataOf 是「这条徽标显示哪条帖子」的取数函数；页头芯去掉后只剩行内徽标在用，
+  // 由 hotBadgeRender 传 () => hotArtData(art) —— 悬浮详情跟着本条帖子，不再固定主贴。
+  function bindDetHover(chip, dataOf) {
     if (chip.getAttribute('data-hb') === '1') return;
     chip.setAttribute('data-hb', '1');
-    chip.addEventListener('mouseenter', () => { hotDetPopOpen(chip, hotDetData()); });
+    chip.addEventListener('mouseenter', () => {
+      let d = null;
+      try { d = typeof dataOf === 'function' ? dataOf() : hotDetData(); } catch (e) { d = null; }
+      hotDetPopOpen(chip, d);
+    });
     chip.addEventListener('mouseleave', hotDetPopHide);
   }
+  // v0.12.8 用户裁定：去掉详情页页头左侧那颗徽标（顶部已有一颗、帖子右侧又一颗，重复）。
+  // 悬浮详情卡能力整体迁到行内徽标（hotBadgeRender 里绑），这里不再造页头节点；只保留
+  // 「页头消失/切页时把可能吊着的弹卡收掉」的清场责任。HOTDET_CLS 仅由 hotDetSweep 兜底摘除遗留。
   function hotDetStep() {
-    if (!hotBadgeGet()) return 0;                       // 与推文内流速徽标同一道总闸（RL-16）
-    const row = benchPostRow();
-    if (!row) {
-      if (hotDetPop && hotDetPop.parentNode) hotDetPopHide();   // SPA 切走页头没了，弹卡别吊在半空
-      return 0;
-    }
-    const d = hotDetData();
-    const full = d && !d.skip ? d : null;
-    const label = full ? full.icon + ' ' + full.velLabel : '🌱 —';
-    const tid = (d && d.tid) || row.id || '';
-    const k = tid + '|' + label;
-    let chip = null;
-    try { chip = row.box.querySelector('.' + HOTDET_CLS); } catch (e) { chip = null; }
-    if (chip && (chip.getAttribute('data-k') || '') === k && chip.previousElementSibling === row.ref) {
-      bindDetHover(chip);
-      return 0;                                         // 没变、位置也对 ⇒ 一笔 DOM 都不写（节拍纪律）
-    }
-    if (!chip) {
-      chip = el('span', null, label);
-      chip.setAttribute('class', HOTDET_CLS);
-      chip.setAttribute('data-xprobe', 'hotdet');
-      Object.assign(chip.style, {
-        flex: 'none', pointerEvents: 'auto', whiteSpace: 'nowrap', cursor: 'default',
-        font: '10px ' + FAB_FONT, color: full ? full.color : UI_TOK.acc, background: UI_TOK.bg,
-        padding: '1px 6px', borderRadius: '4px', border: '1px solid ' + UI_TOK.line,
-        margin: '0 0 0 8px', verticalAlign: '1px', lineHeight: '1.4',
-      });
-      try { row.ref.insertAdjacentElement('afterend', chip); } catch (e) { return 0; }
-    } else {
-      if (chip.textContent !== label) chip.textContent = label;
-      if (chip.previousElementSibling !== row.ref) {
-        try { row.ref.insertAdjacentElement('afterend', chip); } catch (e) { /* 搬不动就留在原地 */ }
-      }
-    }
-    chip.setAttribute('data-k', k);
-    chip.setAttribute('data-tid', tid);
-    bindDetHover(chip);
-    return 1;
+    if (hotDetPop && hotDetPop.parentNode && !benchPostRow()) hotDetPopHide();
+    return 0;
   }
   function hotDetSweep() {
     let n = 0;
@@ -7723,6 +8220,8 @@
       badge: { on: badgeGet() },   // v0.8.9：页面内拉黑徽标的闸（v0.8.16 起默认开）；面板设置区照着它画开关
       hotbadge: { on: hotBadgeGet() },  // v0.11.18 art-020：推文内流速徽标总闸，默认关；面板设置区照着它画开关
       fabrail: { on: fabRailGet() },    // art-021 R4：右缘钮排总闸，默认开；面板设置区照着它画开关
+      // v0.12.9：八颗业务钮各自的显隐（缺省 true = 显示）；面板设置区画成勾选开关
+      fabvis: (() => { const v = fabVisGet(); const o = {}; FAB_VIS_IDS.forEach((id) => { o[id] = v[id] !== false; }); return o; })(),
       last: last, missing: last ? missingFields(last) : [], notes: last ? knownGaps(last) : [], upsert: lastUpsert,
     };
   }
@@ -7763,6 +8262,9 @@
     setHotBadge: (v) => setHotBadge(!!v),
     // art-021 R4：右缘钮排总闸（默认开；关=整根柱子当场摘干净、页面零痕迹，重开当场重建）
     setFabRail: (v) => setFabRail(!!v),
+    // v0.12.9：单颗钮显隐（v={id,on}；折叠钮不可关）——关掉当场不显示不占位
+    setFabVis: (v) => (v && typeof v === 'object') ? setFabVis(String(v.id || ''), v.on !== false)
+      : { ok: false, why: '参数不对' },
     // art-021 R2：钮排位置复位（清 fabpos 存档，回到右缘默认位）
     fabPosReset: () => fabPosReset(),
     debugRec: () => { const dg = debugDigest(); dg.why = 'panel'; logRec('debug', dg); lastDebugAt = Date.now(); return dg; },
@@ -7962,13 +8464,17 @@
       hotBadgeGet, hotBadgeSweep, hotBadgeRender, setHotBadge, hotToggle, hotListBuild,
       HOTBTN_ID, HOTLIST_ID, HOT_BADGE_CLS, HOT_BADGE_KEY,
       // v0.12.3 art-023 详情页页头流量徽标 + 悬停详情卡（纯函数与三件套给自检钉口径）
-      hotDetData, hotDetDate, hotDetRows, hotDetStep, hotDetSweep, hotDetPopShow, hotDetPopHide, bindDetHover,
+      hotDetData, hotArtData, hotDetDate, hotDetRows, hotDetStep, hotDetSweep, hotDetPopShow, hotDetPopHide, bindDetHover,
       HOTDET_CLS, HOTDETPOP_ID,
+      // v0.12.7 数据层：精确读数缓存 + 合并 + 造行 + 按 URL 定位主贴（自检直接钉口径）
+      hotNetMerge, hotFromNet, hotTidOf, netTweets, statusIdFromPath, hotBadgeAuto,
       __hotDet: () => ({ pop: !!hotDetPop, key: hotDetPopKey, hideT: hotDetHideT }),
       __hot: () => ({ open: hotListOpen, root: !!hotListRoot }),
       // v0.11.4：关系标签的判定与占宽（纯函数，自检直接钉口径；flSeen 是「关注列表页扫过没扫过」的总开关）
       relVerdict, followersListSeen, relBudget, relChipEl, relChipRow, relPlace, relAtSpot,
-      noFollowbackDays, followStartAt, REL_CLS,
+      noFollowbackDays, noFollowbackOf, followStartAt, ensureFollowSeed, REL_CLS, REL_TAG,
+      // v0.12.5 主题：自检直接拨 relThemeSync() 并读 __relTheme()，验深/浅两套配色确实会就地翻
+      relThemeDetect, relThemeSync, __relTheme: () => relThemeNow,
       // v0.11.7 桥腿的口子：ask（一次一问的问询本体，自检里配桩直接敲）、relFiber（缓存/节拍的状态读数）
       // v0.11.14 补 relFiberMerge（把桥读数直接灌进台账，自检不用绕 window 消息）与
       // flistTick/flistSig（名单自动刷新的节拍本体与指纹，自检直接拨）。
@@ -7985,6 +8491,12 @@
       // art-021 浮标钮排四改的口子：总闸/折叠/拖动落点三件事，自检直接拨（真机上是面板命令与 pointer 事件）
       fabRailGet, setFabRail, fabFoldGet, fabFoldToggle, fabPosGet, fabPosReset, fabClampPos,
       FOLD_BTN_ID, FABSEP_ID, FAB_SIZE_IDS, FABRAIL_KEY, FABFOLD_KEY, FABPOS_KEY,
+      // v0.12.9：符号表 + 每颗单独显隐的口子（自检直接拨、直接读影子）
+      FAB_GLYPH, FAB_GLYPH_IDS, FAB_VIS_IDS, FABVIS_KEY, fabVisGet, fabVisOn, setFabVis,
+      fabGlyphPx, cdLetter, FAB_STY, UI_TOK, fabLab,
+      // v0.12.10 关系标签住进 badge 盒子 + 悬浮弹卡（关注百分比 + 关注事件）
+      badgePaint, badgeSig, relBadgeRows, relBadgeTip, relBadgePopShow, relBadgePopHide, relBadgeSweep,
+      __relPop: () => ({ on: !!(relBadgePop && relBadgePop.parentNode), key: relBadgeKey, text: relBadgePop ? relBadgePop.textContent : '' }),
       __fabDrag: () => ({ dragging: !!fabDrag, suppress: fabClickSuppress, folded: fabFoldGet(), pos: fabPosGet() }),
       fabStat: () => ({ px: fabSizeEff(), src: fabSizeSrc(), tries: fabTries, beat: fabBeatOn, applied: fabSizeApplied }),
       // v0.9.0 标杆：台账与窗口的口子。排序/合并/取数是纯函数（钉口径），开合与重取走真按钮同一条路。
@@ -8024,6 +8536,8 @@
       hoverCardScan, captureHoverCards, onHoverCardMutation,
       recordDayRow, addImpFromPanel, mergeDayRows, restoreDaysFromDb,
       seriesForPanel, seriesStats, loadSeries, dayKey,
+      // v0.12.6：等页面渲染完才动笔的那道闸，自检要能直接拨（突发窗 / 静默值 / 排一次重画）
+      relDomBusy, relRenderSoon, __relSettle: () => REL_SETTLE_MS,
       getGuard: () => guard, getUsers: () => users, getPosts: () => posts, getSeries: () => series, writeStores, spaTick, renderBlocks, isBlocked,
       ledgerSize: () => Object.keys(relLedger).length,
       missingFields, queue, status: () => ({ sinkOk, lastSinkErr, posted, qlen: queue.length }),

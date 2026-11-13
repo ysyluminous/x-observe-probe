@@ -61,6 +61,8 @@ class El {
   get id() { return this._id; }
   get tagName() { return String(this.tag).toUpperCase(); } // 真 DOM 的 tagName 是大写
   get className() { return this.attrs.class || ''; } // 第三方注入检测要读 className
+  // 真 DOM 的 className 可写（与 class 属性同一份）；[43] 的 grid 判据要靠它（kit.js 建节点时写 className）
+  set className(v) { this.attrs.class = String(v); }
   get textContent() { return this.kids.map((k) => (k instanceof El ? k.textContent : String(k))).join(''); }
   set textContent(v) { this.kids = [String(v)]; }
   getAttribute(n) { return Object.prototype.hasOwnProperty.call(this.attrs, n) ? this.attrs[n] : null; }
@@ -1950,7 +1952,7 @@ console.log('\n[8h] v0.6.4：关注后 60 秒冷却（红色倒计时 / 绿色�
   xp.fabBtn();
   const s0 = xp.guardStatus(Date.now());
   eq('没关注动作时不起冷却', [s0.coolAt, s0.coolLeft, s0.coolFull], [0, 0, 60000]);
-  eq('浮标此时是「观」', xp.fabBtn().textContent, '观');
+  eq('浮标此时是「◉」', xp.fabBtn().textContent, '◉');
   eq('横幅绿色并直说还没动作', [V.coolLine({ guard: s0 }, Date.now()).sty, V.coolLine({ guard: s0 }, Date.now()).text],
     ['ok', '✓ 可以关注 · 还没有关注动作']);
 
@@ -2013,8 +2015,8 @@ console.log('\n[8h] v0.6.4：关注后 60 秒冷却（红色倒计时 / 绿色�
     [fab.textContent, c3.text]);
   xp.getGuard().follows = [Date.now() - 61000];
   sb.__runTimers(2);
-  eq('过 60 秒后节拍器自己把灯翻回「观」（放绿不靠我再去点按钮）', [xp.fabBtn().textContent, fabWrites], ['观', 2]);
-  eq('翻回「观」⇒ 读秒的 1 秒定时器当场摘掉（没有秒可读就不许留一条每秒的节奏）',
+  eq('过 60 秒后节拍器自己把灯翻回「◉」（放绿不靠我再去点按钮）', [xp.fabBtn().textContent, fabWrites], ['◉', 2]);
+  eq('翻回「◉」⇒ 读秒的 1 秒定时器当场摘掉（没有秒可读就不许留一条每秒的节奏）',
     [xp.fabStat().beat, sb.__intervals().filter((x) => x.ms === 1000).length], [false, 0]);
   const c4 = V.coolLine({ guard: xp.guardStatus() }, Date.now());
   // 只钉格式不钉具体秒数：61 秒的间隔在断言前若跨过真实的秒边界就成了 62 秒（1 分 2 秒）——
@@ -2068,13 +2070,13 @@ console.log('\n[8h4] v0.8.15：守卫灯在圈里读秒 + 浮标直径照 X 右�
     [xp.fabStat().px, xp.fabStat().src], [40, 'x']);
   eq('三颗方钮的直径/圆角一起按实测改（方案 A：等大圆角方钮，行高恒 1.1；自适应尺寸不推翻 v0.8.15）',
     [f15.style.width, f15.style.height, f15.style.lineHeight, f15.style.borderRadius],
-    ['40px', '40px', '1.1', '6px']);
-  eq('字号跟着变大（用户原话「字体也要大一点」）：单字 40×0.5=20px，住在 label span 上（v0.9.5 两段式）',
-    f15.children[0].style.font, '20px ui-monospace, Consolas, monospace');
+    ['40px', '40px', '1.1', '9px']);
+  eq('v0.12.9 符号字号：直径 40×0.46=18px 的几何符号，比原汉字小一号、像 grok 图标，住在 label span 上',
+    f15.children[0].style.font, '18px ui-monospace, Consolas, monospace');
   eq('灯那颗也一起放大（它现在要装三位数）', [l15.style.width, l15.style.height], ['40px', '40px']);
   eq('「回」那颗也是等大圆角方钮（个数挪到右上角角标，三种形状的账作废），宽高圆角全按直径',
     [r15.style.width, r15.style.height, r15.style.borderRadius, r15.style.minWidth],
-    ['40px', '40px', '6px', null]);
+    ['40px', '40px', '9px', null]);
   eq('名单锚点按「大出来那截 ×5 颗 + 窗口那两颗各一格」让位（334 这个基准常量一字未动）',
     xp.flistBottomPx(), 334 + (40 - 34) * 5 + (40 + 6) * 2);
   eq('正向对照：窗口那两颗各占一格 fabSlotPx = 直径+6 ⇒ 两格都抠掉只剩 364（让位算式真的咬「排里有几颗」）',
@@ -2109,9 +2111,9 @@ console.log('\n[8h4] v0.8.15：守卫灯在圈里读秒 + 浮标直径照 X 右�
     [sb.__runIntervals(1000) >= 1, IDS['ysy-xprobe-ext-fab'].textContent !== t15], [true, true]);
   xp.getGuard().follows = [];
   xp.fabBtn();
-  eq('翻回「观」⇒ 定时器当场摘掉（没有秒可读的时候，页面里不许留着一条每秒的节奏）',
+  eq('翻回「◉」⇒ 定时器当场摘掉（没有秒可读的时候，页面里不许留着一条每秒的节奏）',
     [xp.fabStat().beat, IDS['ysy-xprobe-ext-fab'].textContent, sb.__intervals().filter((x) => x.ms === 1000).length],
-    [false, '观', 0]);
+    [false, '◉', 0]);
 
   // 量不到的那条腿：另一份沙箱里页面一列都找不到
   const sb2 = run(h('div', {}, [xbtn('没有右列')]), '/home', 'https://x.com/home');
@@ -2125,7 +2127,7 @@ console.log('\n[8h4] v0.8.15：守卫灯在圈里读秒 + 浮标直径照 X 右�
   xp2.fabBtn();   // 定案那一趟也要真的进一次灯，样式才落到页面上（fabMeasure 只定数，不动 DOM）
   eq('回落后的直径也真的写进了页面（圆与字号同一口径，字号在 label span 上）',
     [IDS['ysy-xprobe-ext-fbtn'].style.width, IDS['ysy-xprobe-ext-rbtn'].style.height, IDS['ysy-xprobe-ext-fbtn'].children[0].style.font],
-    ['44px', '44px', '22px ui-monospace, Consolas, monospace']);
+    ['44px', '44px', '20px ui-monospace, Consolas, monospace']);
   const late2 = xbtn('迟到的一列');
   sb2.document.documentElement.appendChild(late2);
   late2.__geo = { left: 1386, top: 700, width: 64, height: 64 };
@@ -2450,12 +2452,12 @@ console.log('\n[8j] v0.6.9：aria 来源三分 / 两张表切片按「有没有�
   RESP.post = { status: 200, text: '{"ok":true,"stored":1}' };
   const sf = run(profile, '/demo_own', 'https://x.com/demo_own');
   const fb = sf.__xprobe.fabBtn();
-  eq('通道正常：绿字「观」+ 灰描边（v0.9.5 绿字在 label span 上；描边换新发丝线）', [fb.textContent, fb.children[0].style.color, fb.style.borderColor], ['观', '#4ec98a', '#242e39']);
+  eq('通道正常：绿「◉」+ 灰描边（v0.12.9 白符号绿态在 label span 上；描边换细白圈）', [fb.textContent, fb.children[0].style.color, fb.style.borderColor], ['◉', '#4ec98a', '#242e39']);
   RESP.post = { status: 0, text: '' };
   sf.__xprobe.doCollect({ force: true });
   sf.__xprobe.flush();
   eq('断开事实成立', sf.__xprobe.status().sinkOk, false);
-  eq('断开只翻描边：文字三态与绿字都不许被通道状态污染', [fb.textContent, fb.children[0].style.color, fb.style.borderColor], ['观', '#4ec98a', '#e06c60']);
+  eq('断开只翻描边：文字三态与符号色都不许被通道状态污染', [fb.textContent, fb.children[0].style.color, fb.style.borderColor], ['◉', '#4ec98a', '#e06c60']);
   ok('投影带红圈（页面里一眼看得见，不必开面板）', /rgba\(224,108,96/.test(fb.style.boxShadow), fb.style.boxShadow);
   ok('title 说清「记录在本机排队并落盘，恢复后补发」', /排队并落盘/.test(fb.title), String(fb.title).slice(-70));
   fb.style.color = 'zz-manual';
@@ -2464,7 +2466,7 @@ console.log('\n[8j] v0.6.9：aria 来源三分 / 两张表切片按「有没有�
   fb.style.color = '#4ec98a';
   RESP.post = { status: 200, text: '{"ok":true,"stored":1}' };
   sf.__xprobe.flush();
-  eq('恢复后描边回灰，文字仍是「观」', [fb.textContent, fb.style.borderColor], ['观', '#242e39']);
+  eq('恢复后描边回灰，文字仍是「◉」', [fb.textContent, fb.style.borderColor], ['◉', '#242e39']);
 
   // v0.8.3 本页曝光榜卡片：profile 页有 122/5 两条带曝光的帖子 + 1 条无指标的推荐卡。
   // 排序、点击滚动定位、无指标行不进榜，全在这份夹具上钉死。行是 div（右下角还要嵌复制钮），按首格 '#N' 认行。
@@ -2544,33 +2546,46 @@ console.log('\n[8j] v0.6.9：aria 来源三分 / 两张表切片按「有没有�
   store['ysy.xprobe.badge'] = true;
   sf.__xprobe.renderBlocks();
   const blkBadges = () => profile.querySelectorAll('[data-xprobe="blk"]');
-  eq('开页就有拉黑钮：两个带作者头的帖子各一颗（无作者推荐卡、UserName 头部都不碰）', blkBadges().length, 2);
-  const bbtn = blkBadges()[0].children[0];
-  eq('未拉黑时钮是灰「拉黑」，缝在名字锚后面（兄弟节点）',
-    [bbtn.textContent, blkBadges()[0].previousSibling.tag], ['拉黑', 'a']);
-  bbtn.fire('click');
+  eq('开页就有状态徽标：两个带作者头的帖子各一颗（无作者推荐卡、UserName 头部都不碰）', blkBadges().length, 2);
+  // v0.12.12：拉黑入口已迁入悬浮弹窗，徽标只承载关系状态（互关/单向/空白占位），行内不再写「拉黑」字样。
+  const b0 = blkBadges()[0];
+  const Xb = sf.__xprobe;
   const bstore = () => { const v = store['ysy.xprobe.blocked'] || {}; return typeof v === 'string' ? JSON.parse(v) : v; };
-  eq('点拉黑：徽标当场翻红「已拉黑」，名单进 GM 存储（demo_own，小写归一）',
-    [bbtn.textContent, Object.keys(bstore())], ['已拉黑', ['demo_own']]);
-  bbtn.fire('click');
-  eq('再点「已拉黑」=取消：徽标回灰「拉黑」，名单里没人了（取消也要发记录，库按最新一条判）',
-    [bbtn.textContent, Object.keys(bstore()).length], ['拉黑', 0]);
+  ok('未拉黑时徽标不写「拉黑」字样（拉黑入口在悬浮弹窗里，不在行内，长昵称也不会把状态挤掉）',
+    !/拉黑/.test(b0.textContent), b0.textContent);
+  // 通过悬浮弹窗点拉黑：弹窗里那颗钮调 blockToggle，名单进 GM 存储
+  Xb.relBadgePopShow(b0, 'demo_own', null);
+  const pop0 = sf.document.getElementById('ysy-xprobe-ext-relpop');
+  const blkBtn0 = pop0 && pop0.querySelector('button');
+  ok('悬浮弹窗含「拉黑 @demo_own」钮（行内拉黑钮已迁此）', !!blkBtn0 && /拉黑 @demo_own/.test(blkBtn0.textContent), blkBtn0 && blkBtn0.textContent);
+  blkBtn0.fire('click');
+  eq('点弹窗拉黑：名单进 GM 存储（demo_own，小写归一）', Object.keys(bstore()), ['demo_own']);
+  // 已拉黑：徽标描红（blocked 视觉），且弹窗钮翻成「取消拉黑」
+  Xb.relBadgePopShow(b0, 'demo_own', null);
+  const pop1 = sf.document.getElementById('ysy-xprobe-ext-relpop');
+  const ublkBtn0 = pop1 && pop1.querySelector('button');
+  ok('拉黑后徽标描红（已进本机拉黑名单）、弹窗钮翻成「取消拉黑 @demo_own」',
+    /rgba/.test(b0.style.background) && !!ublkBtn0 && /取消拉黑 @demo_own/.test(ublkBtn0.textContent),
+    [b0.style.background, ublkBtn0 && ublkBtn0.textContent]);
+  ublkBtn0.fire('click');
+  eq('再点弹窗「取消拉黑」：名单里没人了（取消也要发记录，库按最新一条判）',
+    Object.keys(bstore()).length, 0);
   store['ysy.xprobe.blocked'] = { demo_own: { at: '2026-10-26T00:00:00.000Z', n: '示例笔记' } };
   const sb2b = run(profile, '/demo_own', 'https://x.com/demo_own');
   sb2b.__xprobe.renderBlocks();
-  eq('下次开页名单还在：demo_own 的徽标直接是红「已拉黑」（这就是「以后页面显示会提示已拉黑」）',
-    profile.querySelectorAll('[data-xprobe="blk"]')[0].children[0].textContent, '已拉黑');
-  eq('同一作者的两颗一起翻红（名单按 handle 记账，同 handle 同状态）',
-    profile.querySelectorAll('[data-xprobe="blk"]')[1].children[0].textContent, '已拉黑');
-  // 名单只认 handle 不连坐：同页异 handle 的钮不跟风
+  eq('下次开页名单还在：demo_own 的徽标直接描红（这就是「以后页面显示会提示已拉黑」）',
+    /rgba/.test(profile.querySelectorAll('[data-xprobe="blk"]')[0].style.background), true);
+  eq('同一作者的两颗一起描红（名单按 handle 记账，同 handle 同状态）',
+    /rgba/.test(profile.querySelectorAll('[data-xprobe="blk"]')[1].style.background), true);
+  // 名单只认 handle 不连坐：同页异 handle 的徽标不跟风
   const sb2c = run(h('div', {}, [
     tweetCell('a', '9101', '2026-10-26T01:00:00.000Z', '甲帖'),
     tweetCell('demo_own', '9102', '2026-10-26T02:00:00.000Z', '乙帖'),
   ]), '/home', 'https://x.com/home');
   sb2c.__xprobe.renderBlocks();
   const mix = sb2c.document.querySelectorAll('[data-xprobe="blk"]');
-  eq('名单只认 handle 不连坐：a 的钮还是「拉黑」，demo_own 的翻红',
-    [mix[0].children[0].textContent, mix[1].children[0].textContent], ['拉黑', '已拉黑']);
+  eq('名单只认 handle 不连坐：a 的徽标不描红，demo_own 的描红',
+    [/rgba/.test(mix[0].style.background), /rgba/.test(mix[1].style.background)], [false, true]);
   delete store['ysy.xprobe.blocked'];
   store['ysy.xprobe.badge'] = false;   // v0.8.16 起「没拨过」= 开 ⇒ 这里要显式拨回关：后面几段测的是名单/关系，不该有徽标缝进页面
 
@@ -2715,12 +2730,23 @@ console.log('\n[8j] v0.6.9：aria 来源三分 / 两张表切片按「有没有�
     [lbadges()[0].parentNode.getAttribute('data-testid'), lbadges()[0].style.position]);
   eq('徽标压在空白里、不盖关注钮：整颗右缘 ≤ 钮左缘（吃掉那一次点击就是影响页面）',
     Number(String(lbadges()[0].style.left).replace('px', '')) + 46 <= 470, true);
-  lbadges()[0].children[0].fire('click');
+  // v0.12.12：拉黑入口已迁入悬浮弹窗，列表页徽标只承载关系状态，点拉黑走弹窗。
+  const lbX = lb1.__xprobe;
   const lstore = () => { const v = store['ysy.xprobe.blocked'] || {}; return typeof v === 'string' ? JSON.parse(v) : v; };
-  eq('列表行点拉黑：当场翻红并记进名单（lc_a，小写归一）',
-    [lbadges()[0].children[0].textContent, Object.keys(lstore())], ['已拉黑', ['lc_a']]);
-  lbadges()[0].children[0].fire('click');
-  eq('再点取消：回灰、名单清空（与帖子页同一套 blockToggle）', [lbadges()[0].children[0].textContent, Object.keys(lstore()).length], ['拉黑', 0]);
+  lbX.relBadgePopShow(lbadges()[0], 'lc_a', null);
+  const lpop0 = lb1.document.getElementById('ysy-xprobe-ext-relpop');
+  const lblk0 = lpop0 && lpop0.querySelector('button');
+  ok('列表页悬浮弹窗含「拉黑 @lc_a」钮（行内拉黑钮已迁此，长昵称也挤不掉）',
+    !!lblk0 && /拉黑 @lc_a/.test(lblk0.textContent), lblk0 && lblk0.textContent);
+  lblk0.fire('click');
+  eq('列表行点弹窗拉黑：记进 GM 名单（lc_a，小写归一）', Object.keys(lstore()), ['lc_a']);
+  ok('列表行徽标描红（已进本机拉黑名单）', /rgba/.test(lbadges()[0].style.background), lbadges()[0].style.background);
+  lbX.relBadgePopShow(lbadges()[0], 'lc_a', null);
+  const lpop1 = lb1.document.getElementById('ysy-xprobe-ext-relpop');
+  const lcxl0 = lpop1 && lpop1.querySelector('button');
+  ok('拉黑后弹窗钮翻成「取消拉黑 @lc_a」', !!lcxl0 && /取消拉黑 @lc_a/.test(lcxl0.textContent), lcxl0 && lcxl0.textContent);
+  lcxl0.fire('click');
+  eq('再点弹窗「取消拉黑」：名单清空（与帖子页同一套 blockToggle）', Object.keys(lstore()).length, 0);
   delete store['ysy.xprobe.blocked'];
   store['ysy.xprobe.badge'] = false;   // 显式拨回关（默认已是开）：下面的列表页名单/待回关测的是自家面板，不该往页面缝东西
 
@@ -2766,7 +2792,7 @@ console.log('\n[8j] v0.6.9：aria 来源三分 / 两张表切片按「有没有�
   store['ysy.xprobe.blocked'] = { fb_blk: { at: '2026-10-26T00:00:00.000Z', n: '已拉黑的' } };
   const lb3 = run(h('div', {}, []), '/home', 'https://x.com/home');
   eq('「回」钮带着待回关个数（已回关 mut / 只在我关注里的 fb_only / 已拉黑 fb_blk 都不算）',
-    IDS['ysy-xprobe-ext-rbtn'].textContent, '回2');
+    IDS['ysy-xprobe-ext-rbtn'].textContent, '↩2');
   IDS['ysy-xprobe-ext-rbtn'].fire('click');
   const fbr = IDS['ysy-xprobe-ext-flist'];
   const fbrows = fbr.children.filter((c) => c.children && /^@fb_/.test(String(c.title || '')));
@@ -2826,7 +2852,7 @@ console.log('\n[8j] v0.6.9：aria 来源三分 / 两张表切片按「有没有�
     s14.__xprobe.relFiberMerge({ ud: { following: false, followsYou: true } });
     s14.__xprobe.fabBtn();
     eq('桥带回 followed_by=true 的人进「回」的待回账（台账没记粉丝列表也算）',
-      IDS['ysy-xprobe-ext-rbtn'].textContent, '回1');
+      IDS['ysy-xprobe-ext-rbtn'].textContent, '↩1');
     IDS['ysy-xprobe-ext-flist'].querySelectorAll('button').find((b) => b.textContent === '×').fire('click');
     eq('v0.11.14 夹具测完收摊', IDS['ysy-xprobe-ext-flist'], undefined);
     delete store['ysy.xprobe.users'];
@@ -3282,7 +3308,7 @@ console.log('\n[8l] v0.7.0-D 广场读本机库：账号榜 / 帖子榜 / 建议
     acct: { ok: false, rows: [], err: '本机库 8 秒没回（宿主或 sink 卡住？）' },
     post: { ok: false, rows: [], err: '本机库 8 秒没回（宿主或 sink 卡住？）' } };
   const plazaBad = V.plazaLines({ tab: 'profile', series: { own: 'king', key: 'king', rank: [], min: [], imp: [], handles: [] } }, { db: dbBad, now: T9 });
-  const badRow = plazaBad.filter((m) => m.label === '本机库 xprobe.db')[0];
+  const badRow = plazaBad.filter((m) => (m.label === '本机库 xprobe.db' || m.label === '云端（智枢）'))[0];
   ok('库读不到：红字直说读不到 + 通道，并用扩展 ID 给出装宿主的那条命令（不让空表冒充「没有数据」）',
     !!badRow && badRow.sty === 'bad' && /读不到/.test(badRow.value) && /--ext-id abcdefghijklmnopabcdefghijklmnop/.test(badRow.title),
     badRow && [badRow.value, badRow.title.slice(0, 30)]);
@@ -3292,18 +3318,35 @@ console.log('\n[8l] v0.7.0-D 广场读本机库：账号榜 / 帖子榜 / 建议
     acct: { ok: false, rows: [], err: 'Failed to fetch' },
     post: { ok: false, rows: [], err: 'Failed to fetch' } };
   const downRow = V.plazaLines({ series: { own: 'king', key: 'king', rank: [], min: [], imp: [], handles: [] } }, { db: dbDown, now: T9 })
-    .filter((m) => m.label === '本机库 xprobe.db')[0];
+    .filter((m) => (m.label === '本机库 xprobe.db' || m.label === '云端（智枢）'))[0];
   ok('两条通道都断时点名「宿主未注册 + sink 未启动」，原始 Failed to fetch 只进悬停（面板第一眼要能照着修）',
     !!downRow && /两个通道都没通/.test(downRow.value) && /Failed to fetch/.test(downRow.title) && /install-host\.py/.test(downRow.title),
     downRow && [downRow.value, downRow.title.slice(0, 40)]);
   ok('正向对照：超时那种失败照旧报原文，不被同一句话糊掉（证明上面那条认的是断连，不是「任何错误」）',
     !!badRow && !/两个通道都没通/.test(badRow.value) && /8 秒没回/.test(badRow.value), badRow && badRow.value);
+  // v0.12.18（真机 2026-11-13）：云端档 fetch 失败同样写着 "Failed to fetch"，旧版一刀切成
+  // 「宿主未注册 + sink 未启动」，把人往完全相反的方向引；8765 被别的服务占了回的 "Not Found" 同理。
+  const cloudBad = { id: 'abcdefghijklmnopabcdefghijklmnop', via: 'cloud', ms: 40, native: { ok: true, at: T9, err: '' },
+    acct: { ok: false, rows: [], err: '云端没连上：Failed to fetch（http://localhost:3100）' },
+    post: { ok: false, rows: [], err: '云端不采集：PG 未存帖子按小时增速序列（view_per_h），云端不采集（本地库档看得到）' } };
+  const plazaCloud = V.plazaLines({ series: { own: 'king', key: 'king', rank: [], min: [], imp: [], handles: [] } }, { db: cloudBad, now: T9 });
+  const cloudRow = plazaCloud.filter((m) => (m.label === '本机库 xprobe.db' || m.label === '云端（智枢）'))[0];
+  ok('云端档连不上不许误报「宿主未注册 + sink 未启动」：点名云端没连上、通道写云端（本机宿主当时其实在写库）',
+    !!cloudRow && /云端档没连上/.test(cloudRow.value) && !/两个通道都没通/.test(cloudRow.value) && /通道 云端/.test(cloudRow.value),
+    cloudRow && cloudRow.value);
+  const portBad = Object.assign({}, cloudBad, { via: '',
+    acct: { ok: false, rows: [], err: '回包不是 JSON：Not Found' },
+    post: { ok: false, rows: [], err: '回包不是 JSON：Not Found' } });
+  const portRow = V.plazaLines({ series: { own: 'king', key: 'king', rank: [], min: [], imp: [], handles: [] } }, { db: portBad, now: T9 })
+    .filter((m) => (m.label === '本机库 xprobe.db' || m.label === '云端（智枢）'))[0];
+  ok('8765 被别的服务占了（回包不是 JSON / Not Found）不许报「两个通道都没通」：点名端口冲突',
+    !!portRow && /8765/.test(portRow.value) && !/两个通道都没通/.test(portRow.value), portRow && portRow.value);
   ok('库读不到时退回浏览器那套每人一行（至少不白屏），且一张库榜都不许发（免得空表被当成真账）',
     plazaBad.filter((m) => m.k === 'rank').length === 1 && plazaBad.filter((m) => m.k === 'grid').length === 0,
     plazaBad.map((m) => m.k).join(','));
   const plazaWait = V.plazaLines({ series: { own: 'king', key: 'king', rank: [], min: [], imp: [], handles: [] } }, { db: null, now: T9 });
   ok('还没读库时说的是「正在读…」而不是失败（第一眼别报红）',
-    plazaWait.filter((m) => m.label === '本机库 xprobe.db')[0].sty === 'warn', '');
+    plazaWait.filter((m) => (m.label === '本机库 xprobe.db' || m.label === '云端（智枢）'))[0].sty === 'warn', '');
 }
 
 console.log('\n[9] 报错钩子');
@@ -3537,8 +3580,8 @@ console.log('\n[11] 关注守卫：只读观察 / 基线不虚计 / 滚动窗口
   xp.doCollect({ force: true });   // 到限状态要经一次 render 才落到浮标与 state 上
   const gst = xp.stateForPanel();
   ok('到限信息进 state（腾出位置那句话由 view 层拼，见 [12]）', gst.guard.over24 === true && gst.guard.free24 > 0, [gst.guard.f24, gst.guard.free24]);
-  eq('state 里带着 sink/guard/dump/counts/last/missing/notes/upsert/host/peer/own/series/storage/runsMeta（v0.6.8 加 debug/rndMax，v0.6.9 加 trim，v0.8.7 加 perf，v0.8.9 加 badge，art-021 加 fabrail），面板不再读页面', Object.keys(gst).sort().join(','),
-    'badge,build,counts,debug,dump,fabrail,guard,host,hotbadge,href,last,missing,notes,own,peer,perf,rndMax,runsMeta,series,sink,storage,tab,trim,upsert,ver');
+  eq('state 里带着 sink/guard/dump/counts/last/missing/notes/upsert/host/peer/own/series/storage/runsMeta（v0.6.8 加 debug/rndMax，v0.6.9 加 trim，v0.8.7 加 perf，v0.8.9 加 badge，art-021 加 fabrail、v0.12.9 加 fabvis），面板不再读页面', Object.keys(gst).sort().join(','),
+    'badge,build,counts,debug,dump,fabrail,fabvis,guard,host,hotbadge,href,last,missing,notes,own,peer,perf,rndMax,runsMeta,series,sink,storage,tab,trim,upsert,ver');
   // 队列账本与表顶状态必须真的在 state 里：面板那两行只是读它们，读不到就是「看不见」的老问题
   eq('state.sink.q 是队列账本（长度/落盘条数/丢弃数/断线毫秒/两个上限）',
     ['len,bytes,count,dropped,adopted,persisted,lastAt,err,down,max,byteCap,boot', typeof gst.sink.q.len === 'number' && !!gst.sink.q.boot],
@@ -3563,17 +3606,17 @@ console.log('\n[11] 关注守卫：只读观察 / 基线不虚计 / 滚动窗口
       'ysy-xprobe-ext-sep', 'ysy-xprobe-ext-fab']);
   ok('第七颗「稿」（AI 回帖）在闸关着时是藏着的（display:none，不是一个字都不发的那种「没做」）：默认关 = 页面上找不到它',
     !!IDS['ysy-xprobe-ext-aibtn'] && IDS['ysy-xprobe-ext-aibtn'].style.display === 'none'
-      && IDS['ysy-xprobe-ext-aibtn'].textContent === '稿', IDS['ysy-xprobe-ext-aibtn'] && IDS['ysy-xprobe-ext-aibtn'].style.display);
+      && IDS['ysy-xprobe-ext-aibtn'].textContent === '✎', IDS['ysy-xprobe-ext-aibtn'] && IDS['ysy-xprobe-ext-aibtn'].style.display);
   eq('六颗钮各管各的（方案 A 单字）：关=本页用户名单、榜=曝光榜卡片、回=待回关、杆=按人的窗口、帖=按条的窗口（灯的三态在下面两条钉；第七颗「稿」归 v0.11.4，判据在段 [35]）',
     [IDS['ysy-xprobe-ext-fbtn'].textContent, IDS['ysy-xprobe-ext-cbtn'].textContent,
       IDS['ysy-xprobe-ext-rbtn'].textContent, IDS['ysy-xprobe-ext-bbtn'].textContent.slice(0, 2),
-      IDS['ysy-xprobe-ext-bpbtn'].textContent.slice(0, 2)], ['关', '榜', '回', '杆', '帖']);
+      IDS['ysy-xprobe-ext-bpbtn'].textContent.slice(0, 2)], ['☰', '▤', '↩', '◎', '▦']);
   ok('到限时灯变红底读秒（只警告，不拦点击；v0.8.15 起「限」这个字换成还要等多久：秒/分/小时三档；v0.9.5 红字在 label span 上）',
     !!fab && /^(\d{1,3}|\d{1,2}[mh])$/.test(fab.textContent) && fab.children[0].style.color === '#e06c60',
     fab && [fab.textContent, fab.children[0].style.color]);
   eq('不再有「隐藏面板」这回事：没有面板节点也没有隐藏标记', [IDS['ysy-xprobe-panel'], store['ysy.xprobe.hidden']], [undefined, undefined]);
   xp.getGuard().follows = []; xp.fabBtn();
-  eq('额度回来了就变回「观」（同一颗按钮两个状态）', IDS['ysy-xprobe-ext-fab'].textContent, '观');
+  eq('额度回来了就变回「◉」（同一颗按钮两个状态）', IDS['ysy-xprobe-ext-fab'].textContent, '◉');
   const nRt = sb.__rtMsgs.length;
   IDS['ysy-xprobe-ext-fab'].fire('click');
   eq('点守卫灯=发开面板请求（v0.8.5 起灯不再兼职开关卡片），且不挂任何卡片/名单节点',
@@ -3793,6 +3836,61 @@ console.log('\n[11d] 面板取 state 前先吃进共享台账（v0.7.0 修「关
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const layersDone = (async function () {
   const rd = (p) => fs.readFileSync(path.join(__dirname, 'extension', p), 'utf8');
+  // v0.12.13（art-032）工作台（dashboard.html/js）的源码快照：mine/plaza/forecast/debug 四视图搬过去之后，
+  // 搬家类判据咬这两份，面板类继续咬 sidepanel.*。定义在大 IIFE 顶部——各 [块] 有自己的花括号作用域。
+  // v0.12.17（art-035）：工作台拆成 ui/dash/ 下六个独立 HTML + 六个短页面脚本；判据咬「全部页面拼起来」。
+  const DASH_PAGES = ['home', 'mine', 'plaza', 'fc', 'debug', 'set'];
+  const dHtml = DASH_PAGES.map((k) => rd('ui/dash/' + k + '.html')).join('\n');
+  const dSrc = rd('ui/dashboard.js') + '\n' + DASH_PAGES.map((k) => rd('ui/dash/page-' + k + '.js')).join('\n');
+  const kitClean = rd('ui/kit.js').replace(/^\s*\/\/.*$/gm, '');   // 公共渲染层（v0.12.14 抽取）：渲染器类判据咬这里
+
+  console.log('\n[11b] v0.12.4 关注时间/未回关：面板显示层（唯一写者在本机库 follow_starts）');
+  const fbSample = [
+    { handle: 'alice', follow_at: '2026-10-01T08:00:00.000Z', at_source: 'event', follow_back: 'yes', suspect: 0 },
+    { handle: 'bob', follow_at: '2026-09-20T08:00:00.000Z', at_source: 'event', follow_back: 'no', suspect: 1 },
+    { handle: 'dave', follow_at: '2026-08-05T08:00:00.000Z', at_source: 'event', follow_back: 'unknown', suspect: 0 },
+    { handle: 'erin', follow_at: '2026-06-01T00:00:00.000Z', at_source: 'estimated', follow_back: 'no', suspect: 0 },
+  ];
+  ok('显示层导出 followBackRows / followBackLines（判定不在这一层）',
+    typeof V.followBackRows === 'function' && typeof V.followBackLines === 'function',
+    [typeof V.followBackRows, typeof V.followBackLines]);
+  const fbRows = V.followBackRows(fbSample, { now: Date.parse('2026-11-12T00:00:00Z') });
+  ok('默认折起「已回关」，保留「明确未回关 / 未知」，顺序照 SQL（事件升序、估值垫底）',
+    fbRows.length === 3 && fbRows.map((r) => r.handle).join(',') === 'dave,bob,erin',
+    fbRows.map((r) => r.handle));
+  ok('估值行文本带「（估）」，真实事件行不带 —— 不冒充真实关注时间',
+    fbRows[2].text.includes('（估）') && !fbRows[0].text.includes('估') && !fbRows[1].text.includes('估'),
+    fbRows.map((r) => r.text));
+  ok('三态文字都在：明确未回关 / 未知；默认视图里不出现「已回关」',
+    fbRows.map((r) => r.text).join('\n').includes('明确未回关')
+    && fbRows.map((r) => r.text).join('\n').includes('未知')
+    && !fbRows.map((r) => r.text).join('\n').includes('已回关'), fbRows.map((r) => r.text));
+  ok('suspect=1 保留但带「可疑」标记，不删行也不洗白',
+    fbRows[1].text.includes('可疑') && !fbRows[0].text.includes('可疑'),
+    [fbRows[0].text, fbRows[1].text]);
+  const fbAll = V.followBackRows(fbSample, { now: Date.parse('2026-11-12T00:00:00Z'), all: true });
+  ok('反向对照：all=true 已回关那行也出来，且文字写明「已回关」',
+    fbAll.length === 4 && fbAll[2].handle === 'alice' && fbAll[2].text.includes('已回关'),
+    fbAll.map((r) => r.handle));
+  ok('空/坏回包不炸面板：followBackLines 给的是引导而不是白屏',
+    Array.isArray(V.followBackLines({}, { db: { followStarts: { ok: false, err: '没回包' } } }))
+    && V.followBackLines({}, { db: { followStarts: { ok: false, err: '没回包' } } }).length >= 2,
+    V.followBackLines({}, { db: { followStarts: { ok: false, err: '没回包' } } }).length);
+  ok('四跳同名：本机库 / 面板 / 显示层都写 follow_starts，三列 at_source / follow_back / suspect 不改名',
+    rd('../xprobe_db.py').includes('"follow_starts"')
+    && rd('ui/sidepanel.js').includes("one('follow_starts', 500)")
+    && /at_source/.test(rd('../xprobe_db.py')) && /at_source/.test(rd('ui/view.js'))
+    && /follow_back/.test(rd('../xprobe_db.py')) && /follow_back/.test(rd('ui/view.js')),
+    [rd('../xprobe_db.py').includes('"follow_starts"'), rd('ui/sidepanel.js').includes("one('follow_starts', 500)")]);
+
+  ok('L2 上送：同一份结论四跳同名（at_source / follow_back / suspect）、面板写扩展存储、SW 只读不另查库',
+    /FOLLOW_STARTS_KEY = 'ysy\.xprobe\.followStarts'/.test(rd('background/sw.js')) &&
+    /chrome\.storage\.local\.set\(\{ 'ysy\.xprobe\.followStarts'/.test(rd('ui/sidepanel.js')) &&
+    /getKey\(FOLLOW_STARTS_KEY\)/.test(rd('background/sw.js')) &&
+    /at_source: String\(r\.at_source/.test(rd('background/sw.js')) &&
+    /follow_back: String\(r\.follow_back/.test(rd('background/sw.js')) &&
+    !/dbq\(\{ q: 'follow_starts'/.test(rd('background/sw.js')),
+    [rd('background/sw.js').includes('FOLLOW_STARTS_KEY'), rd('ui/sidepanel.js').includes('followStarts')]);
 
   console.log('\n[12] manifest：权限收到最小（这条是「不能让 X 发现」的声明层边界）');
   {
@@ -3826,16 +3924,18 @@ const layersDone = (async function () {
       // v0.9.9 出本机的域名从两条收成一条：`m.mingzhang.cc` 是 Next.js 前端，它的 `/api/*` 不在 rewrites 里，
       // 真机点「发验证码」收到的是前端页面的 HTML 404 —— 登录与上送本来都挂在 api2（同一个 boot4 应用）
       // ⇒ 那条 m. 的 host_permission 成了没人用的权限，按 RL-3 一并摘掉（申请了不用也是扩权）。
-      const HP_SINK = /^https?:\/\/(127\.0\.0\.1|localhost):8765\/\*$/, HP_CLOUD = /^https:\/\/api2\.mingzhang\.cc\/\*$/;
-      // v0.10.0 多一条 http://127.0.0.1:28081/*：「云端接口」切到本机 dev 时，SW 要打得进用户自己正在跑的
+      const HP_SINK = /^https?:\/\/(127\.0\.0\.1|localhost):8765\/\*$/, HP_CLOUD = /^https:\/\/zhishu\.mingzhang\.cc\/\*$/;
+      // v0.10.0 多一条 http://localhost:3100/*：「云端接口」切到本机 dev 时，SW 要打得进用户自己正在跑的
       // boot4（端口抄 boot4 的 application-dev.yml，不是猜的）。它是回环、不是又一条外部域名，
       // 而且只有 SW 用得上——core 的 xhr 那条通道仍只认 8765（下面那条判据钉着），页面 JS 借不到这条权限。
-      const HP_DEV = /^http:\/\/127\.0\.0\.1:28081\/\*$/;
-      eq('host_permissions = 本机回环三条（sink 两条 + 自家 dev boot4 一条）+ 云域名一条（两档地址写死在 SW 枚举里，面板填不进第三档）',
-        (mf.host_permissions || []).slice().sort().map((p) => HP_DEV.test(p) ? 'dev' : HP_SINK.test(p) ? 'loop' : HP_CLOUD.test(p) ? 'cloud' : p),
-        ['dev', 'loop', 'loop', 'cloud']);
-      ok('没有 <all_urls> 也没有通配 host（出本机的只有 api2 这一条精确域，其余全是回环）', JSON.stringify(mf).indexOf('<all_urls>') < 0 &&
-        (mf.host_permissions || []).every((p) => HP_SINK.test(p) || HP_DEV.test(p) || HP_CLOUD.test(p)), mf.host_permissions);
+      const HP_DEV = /^http:\/\/localhost:3100\/\*$/;
+      const HP_ZHISHU = /^https:\/\/zhishu\.mingzhang\.cc\/\*$/;
+      const HP_ZHISHU_DEV = /^http:\/\/localhost:3100\/\*$/;   // v0.12.15：工作台云端档「开发」格（本机 zhishu-web dev）
+      eq('host_permissions = 本地 api 两条（sink 127/localhost:8765）+ 智枢两档两条（开发 localhost:3100 / 线上 zhishu.mingzhang.cc）—— v0.12.17 boot4 退役后只剩 3 个 baseURL、四条声明，仍无 x.com',
+        (mf.host_permissions || []).slice().sort().map((p) => HP_DEV.test(p) ? 'dev' : HP_SINK.test(p) ? 'loop' : HP_CLOUD.test(p) ? 'cloud' : HP_ZHISHU.test(p) ? 'zhishu' : HP_ZHISHU_DEV.test(p) ? 'zhishu-dev' : p),
+        ['loop', 'dev', 'loop', 'cloud']);
+      ok('没有 <all_urls> 也没有通配 host（出本机只有 zhishu.mingzhang.cc 这一颗自家精确域，其余全是回环）', JSON.stringify(mf).indexOf('<all_urls>') < 0 &&
+        (mf.host_permissions || []).every((p) => HP_SINK.test(p) || HP_DEV.test(p) || HP_CLOUD.test(p) || HP_ZHISHU.test(p) || HP_ZHISHU_DEV.test(p)), mf.host_permissions);
       const cs = (mf.content_scripts || [])[0] || {};
       eq('注入范围只有 x/twitter 两个域名本身', cs.matches, ['https://x.com/*', 'https://twitter.com/*']);
       eq('先 host-shim 再 core（core 同步用 GM_* 名字，且等 __XP_HOST_READY__）', cs.js, ['content/host-shim.js', 'content/core.js']);
@@ -4416,7 +4516,7 @@ const layersDone = (async function () {
     eq('SW 白名单里没有 core 不认的命令（点了报错的按钮）', swList.filter((c) => coreAccept.indexOf(c) < 0), []);
     // SVG 的名字空间是个 XML 标识符（createElementNS 的参数），浏览器不会去取它。
     // 除这一个以外，面板/格式化层里仍不许出现任何非回环的 http(s) 字面量 —— 白名单只此一条，别想顺手加第二条
-    const spNoComment = spSrc.replace(/^\s*\/\/.*$/gm, '') + viewSb.XPROBE_VIEW.toString();
+    const spNoComment = spSrc.replace(/^\s*\/\/.*$/gm, '') + viewSb.XPROBE_VIEW.toString() + '\n' + kitClean;   // v0.12.14：SVG_NS 随渲染层搬进 kit
     const hasBadUrl = (s) => /https?:\/\/(?!127\.0\.0\.1|localhost)[a-z0-9.-]+\.[a-z]{2,}/i.test(s);
     const ONLY_NS = 'http://www.w3.org/2000/svg';
     ok('面板/格式化层里唯一的非回环字面量就是 SVG 名字空间（不是要请求的地址）',
@@ -4488,8 +4588,8 @@ const layersDone = (async function () {
       /SINK_PREFIXES/.test(shimSrc2) && /isLoopback/.test(swSrc), '');
     // 孤儿面板（用户现场：⟳ 之后旧 Side Panel 看着有数、每按一键都 "Receiving end does not exist"，
     // 用户以为按钮坏了）——send 两处（回调 lastError / 同步 throw）都必须点名「关掉重开」怎么救
-    ok('连接类报错点名「旧副本，关掉重开」），不许只把裸错误丢给用户',
-      /Receiving end does not exist[\s\S]{0,200}旧副本/.test(spSrc) && spSrc.split('旧副本').length >= 3, '');
+    ok('连接类报错点名「旧副本，关掉重开」），不许只把裸错误丢给用户（v0.12.14 send 通道在 kit，话术按页面名参数化）',
+      /Receiving end does not exist[\s\S]{0,200}旧副本/.test(kitClean) && kitClean.split('旧副本').length >= 3, '');
     ok('视图显隐用 classList.toggle 而不是覆写 className（覆写把布局类 bar 一起抹掉 ⇒ .bar.hide 匹配不上，四条工具条全裸露——用户那个「切哪个 tab 都一堆按钮」的现场）',
       /classList\.toggle\('hide', !on\)/.test(spSrc) && !/className = on \? '' : 'hide'/.test(spSrc), '');
     // 趋势页这轮：日线表升级成网格编辑器，旧 bkBox 补录条退休——它 hide 写死在 html 上、
@@ -4500,26 +4600,26 @@ const layersDone = (async function () {
       spHtml.indexOf('bkBox') < 0 && spClean.indexOf('bkVal') < 0 && spClean.indexOf('bBkAdd') < 0 && spClean.indexOf('doBackfill') < 0, '');
     // 取块边界用「下一个顶层 function」而不是固定 3400 字符窗口：impsNode 拆成显示/编辑两态后早已超过窗口，
     // 固定长度会让 cmd('impDel') 掉到窗外 —— got 恒等于窗口值 3400，就是这种假红的特征（咬的是量尺不是代码）。
-    const gridAt = spClean.indexOf('function impsNode');
-    const gridNext = spClean.indexOf('\n  function ', gridAt + 10);
-    const gridBlock = gridAt < 0 ? '' : spClean.slice(gridAt, gridNext > 0 ? gridNext : gridAt + 12000);
+    const gridAt = kitClean.indexOf('function impsNode');   // v0.12.14：impsNode 在 ui/kit.js
+    const gridNext = kitClean.indexOf('\n    function ', gridAt + 10);   // kit 内层函数缩进 4 空格
+    const gridBlock = gridAt < 0 ? '' : kitClean.slice(gridAt, gridNext > 0 ? gridNext : gridAt + 12000);
     const edSrc = rd('ui/editor.js');
     ok('编辑窗独立于侧栏（用户真机反馈：360px 侧栏里的模态框「太小了、看不清字」）：impsNode 只开窗，窗口 640×560 居中',
-      gridBlock.length > 0 && /openEditorWindow/.test(gridBlock) && /chrome\.windows\.create/.test(spClean) &&
-      /ui\/editor\.html/.test(spClean) && /getLastFocused/.test(spClean) && /type: 'popup'/.test(spClean),
+      gridBlock.length > 0 && /openEditorWindow/.test(gridBlock) && /chrome\.windows\.create/.test(kitClean) &&
+      /ui\/editor\.html/.test(kitClean) && /getLastFocused/.test(kitClean) && /type: 'popup'/.test(kitClean),
       [gridBlock.length, gridAt, gridNext]);
     ok('正向对照：把开窗 URL 换成别的页面，同一条判据当场变红（证明它咬的是编辑窗那一跳）',
-      /ui\/editor\.html/.test(spClean.replace('ui/editor.html', 'ui/nope.html')) === false, '');
+      /ui\/editor\.html/.test(kitClean.replace('ui/editor.html', 'ui/nope.html')) === false, '');
     // v0.8.1-k 用户裁定：第二张表也要能编辑（「关注粉丝帖子 这个表 也需要给一个 编辑……又要能补充历史数据」）
     // ⇒ 编辑窗改双模式（kind=imp 曝光两列 / kind=fow 关注粉丝帖子），列名只在 COLS 一处。
     ok('第二张表也有「编辑」钮：openEditorWindow 恰两处调用（第一张不带 kind、第二张带 fow）',
-      (spClean.match(/openEditorWindow\(m\.who/g) || []).length === 2 &&
-      /openEditorWindow\(m\.who \|\| ''\)/.test(spClean) &&
-      /openEditorWindow\(m\.who \|\| '', 'fow'\)/.test(spClean) &&
-      /function openEditorWindow\(who, kind\)/.test(spClean),
-      [(spClean.match(/openEditorWindow\(m\.who/g) || []).length]);
+      (kitClean.match(/openEditorWindow\(m\.who/g) || []).length === 2 &&
+      /openEditorWindow\(m\.who \|\| ''\)/.test(kitClean) &&
+      /openEditorWindow\(m\.who \|\| '', 'fow'\)/.test(kitClean) &&
+      /function openEditorWindow\(who, kind\)/.test(kitClean),
+      [(kitClean.match(/openEditorWindow\(m\.who/g) || []).length]);
     ok('正向对照：把第二颗钮的 fow 参数抹掉，同一条判据当场变红（证明它咬的是那一个参数不是随便两处调用）',
-      /openEditorWindow\(m\.who \|\| '', 'fow'\)/.test(spClean.replace(", 'fow'", '')) === false, '');
+      /openEditorWindow\(m\.who \|\| '', 'fow'\)/.test(kitClean.replace(", 'fow'", '')) === false, '');
     ok('编辑窗双模式列头（imp=总曝光/有效曝光；fow=关注/粉丝/帖子）：列名只在 COLS 一处，两分支互不含对方的列',
       (edSrc.match(/const COLS/g) || []).length === 1 &&
       /const FOW = kind === 'fow'/.test(edSrc) &&
@@ -4596,12 +4696,14 @@ const layersDone = (async function () {
       !/replace\(\/\^@\/, ''\)\.trim\(\)\.toLowerCase\(\)/.test(coreSrc), '');
     // 「切视线」与「从本机库回填」各穿三层：html 有按钮/下拉、js 有绑定与命令、core 有实现 —— 少一层就是按了没反应
     const coreHas = (pat) => new RegExp(pat).test(coreSrc);
-    const threeLayers = (id, jsPat, corePat) => rd('ui/sidepanel.html').indexOf('id="' + id + '"') >= 0 &&
-      new RegExp(jsPat).test(spClean) && coreHas(corePat);
-    ok("切视线三层齐：sidepanel.html 里有 whoPick、面板代码里有它的 change 绑定、core 里有 seriesView 命令",
+    // v0.12.13（art-032）：mine/plaza/forecast/debug 四个数据密集视图搬进工作台 ui/dashboard.html；
+    // 面板只剩 home/follow/set。判据随搬家同步（非放宽）：面板类继续咬 sidepanel.*，搬家类改咬 dHtml/dSrc（大 IIFE 顶部定义）
+    const threeLayers = (id, jsPat, corePat) => dHtml.indexOf('id="' + id + '"') >= 0 &&
+      new RegExp(jsPat).test(dSrc) && coreHas(corePat);
+    ok("切视线三层齐（v0.12.13 随广场搬进工作台）：dashboard.html 里有 whoPick、工作台代码里有它的 change 绑定、core 里有 seriesView 命令",
       threeLayers('whoPick', "\\$\\('whoPick'\\)", 'seriesView:'), '');
-    ok('回填三层齐：sidepanel.html 的 bRestore、js 的 cmd(impRestoreDb)、core 的 impRestoreDb 实现',
-      threeLayers('bRestore', "cmd\\('impRestoreDb'\\)", 'impRestoreDb:'), '');
+    ok('回填三层齐（v0.12.13 随「我的」搬进工作台）：工作台 mine 工具条动态造 bRestore、发 impRestoreDb 命令，core 的 impRestoreDb 实现',
+      /mk\('bRestore', '从本机库回填'/.test(dSrc) && /'impRestoreDb'/.test(dSrc) && coreHas('impRestoreDb:'), '');
     const fakeCoreNoRestore = coreSrc.replace(/impRestoreDb: \(v\) => restoreDaysFromDb\(v\),/, '');
     ok('正向对照：删掉 core 里那行 impRestoreDb 实现，回填那条判据当场变红（证明它真在 core 里找这一行）',
       fakeCoreNoRestore.length < coreSrc.length && !/impRestoreDb:/.test(fakeCoreNoRestore),
@@ -4638,20 +4740,20 @@ const layersDone = (async function () {
     const viewSrc = rd('ui/view.js');
     ok('排名三层齐：core 造 rank 字段、view 有 rankRows/rankNode 并导出、面板有 rank 分支与 rankNode 渲染',
       /rank: hs\.slice/.test(coreSrc) && /function rankRows/.test(viewSrc) && /function rankNode/.test(viewSrc) &&
-      /rankRows: rankRows, rankNode: rankNode/.test(viewSrc) && /msg\.k === 'rank'/.test(spSrc) && /function rankNode\(m\)/.test(spSrc), '');
-    ok('排序状态存面板模块级变量并回灌 plazaLines（render() 每次重建整树，存 DOM 上会被自己刷掉）',
-      /let rankSortBy = 'fans', rankAsc = false/.test(spClean) &&
-      /V\.plazaLines\(st, \{ by: rankSortBy, asc: rankAsc, now: Date\.now\(\), acct: acctSort, post: postSort, db: db, acctLimit: acctLimit, postLimit: postLimit, rankLimit: rankLimit, tlSrcf: tlSrcf, tlDay: tlDay, tlLimit: tlLimit, tlSort: tlSort \}\)/.test(spClean) &&
-      /rkHead/.test(spClean), '');
+      /rankRows: rankRows, rankNode: rankNode/.test(viewSrc) && /msg\.k === 'rank'/.test(kitClean) && /function rankNode\(m\)/.test(kitClean), '');
+    ok('排序状态存 kit 模块级变量（v0.12.17 拆页后 page-plaza.js 经 K.sorts() 回灌 plazaLines；render() 每次重建整树，存 DOM 上会被自己刷掉）',
+      /let rankSortBy = 'fans', rankAsc = false/.test(kitClean) &&
+      /plazaLines\(api\.getState\(\), Object\.assign\(\{ now: Date\.now\(\), db: api\.getDb\(\) \}, K\.sorts\(\)\)\)/.test(dSrc) &&
+      /rkHead/.test(kitClean), '');
     // v0.8.1-t 榜分页：一次 10 条、「更多」+10；换排序回第一页；三处（view 分页字段 / moreBtnNode / 模块变量）缺一不可
-    ok('榜分页三处齐：面板模块变量 acct/post/rank/tlLimit + moreBtnNode 共用钮（grid/rank 都挂）+ 换排序回第一页',
-      /let acctLimit = 10, postLimit = 10, rankLimit = 10;/.test(spClean) &&
-      /let tlDay = '', tlSrcf = '', tlLimit = 10, tlSort = 'view';/.test(spClean) &&
-      /function moreBtnNode\(left, onMore\)/.test(spClean) &&
-      /rankLimit \+= 10; render\(\);/.test(spClean) &&
-      /postLimit \+= 10;[\s\S]{0,60}tlLimit \+= 10;[\s\S]{0,60}acctLimit \+= 10;[\s\S]{0,20}render\(\);/.test(spClean) &&
-      /postSort = k; postLimit = 10; \} else \{ acctSort = k; acctLimit = 10; \}/.test(spClean) &&
-      /rankLimit = 10;/.test(spClean), '');
+    ok('榜分页三处齐：kit 模块变量 acct/post/rank/tlLimit + moreBtnNode 共用钮（grid/rank 都挂）+ 换排序回第一页',
+      /let acctLimit = 10, postLimit = 10, rankLimit = 10;/.test(kitClean) &&
+      /let tlDay = '', tlSrcf = '', tlLimit = 10, tlSort = 'view';/.test(kitClean) &&
+      /function moreBtnNode\(left, onMore\)/.test(kitClean) &&
+      /rankLimit \+= 10; render\(\);/.test(kitClean) &&
+      /postLimit \+= 10;[\s\S]{0,60}tlLimit \+= 10;[\s\S]{0,60}acctLimit \+= 10;[\s\S]{0,20}render\(\);/.test(kitClean) &&
+      /postSort = k; postLimit = 10; \} else \{ acctSort = k; acctLimit = 10; \}/.test(kitClean) &&
+      /rankLimit = 10;/.test(kitClean), '');
     ok('正向对照：把「更多」按钮的挂载点摘掉，同一条判据当场变红',
       /m\.more > 0\) d\.append\(moreBtnNode/.test(spClean.replace(/if \(m\.more > 0\) d\.append\(moreBtnNode[^;]*;/g, '')) === false, '');
     ok('排名的「距今」吃可注入时刻（now 缺省才回落到 Date.now()）：自检钉住 T0 才能判新鲜度，否则跨午夜那条自己变红',
@@ -4673,22 +4775,23 @@ const layersDone = (async function () {
       /function tlSrcOf\(tab, stats\)/.test(coreSrc) && /tlSrc: tlSrcOf\(tab, stats\)/.test(coreSrc) &&
       /tab !== 'home'/.test(coreSrc) && /selected === 'true'/.test(coreSrc) &&
       /tlSrc: last\.tlSrc \|\| undefined/.test(coreSrc) && /rec\.fyAt == null/.test(coreSrc) &&
-      /one\('tl_days', 60\)/.test(spClean) && /one\('tl_rank', 500, tlDay\)/.test(spClean) &&
-      /m\.cls === 'tl'/.test(spClean) && /tlLimit = 10; fetchDb\(true\)/.test(spClean) &&
-      /m\.cards/.test(spClean) && /target = '_blank'/.test(spClean) && /tlMeta/.test(spClean) &&
-      /function openTlUser\(author\)/.test(spClean) && /q: 'author_posts', limit: 200, author: author/.test(spClean) &&
-      /tlModalWrap/.test(spClean) && /preventDefault\(\); e\.stopPropagation\(\); openTlUser/.test(spClean) &&
-      /V\.tlUserRows\(tlUserDb\)/.test(spClean), '');
+      /one\('tl_days', 60\)/.test(dSrc) && /one\('tl_rank', 50, \{ day: K\.sorts\(\)\.tlDay \}\)/.test(dSrc) &&
+      /m\.cls === 'tl'/.test(kitClean) && /tlLimit = 10; if \(fetchDb\) fetchDb\(true\)/.test(kitClean) &&
+      /m\.cards/.test(kitClean) && /target = '_blank'/.test(kitClean) && /tlMeta/.test(kitClean) &&
+      /function openTlUser\(author\)/.test(kitClean) && /one\('author_posts', 200, \{ author: author \}\)/.test(kitClean) &&
+      /tlModalWrap/.test(kitClean) && /preventDefault\(\); e\.stopPropagation\(\); openTlUser/.test(kitClean) &&
+      /(?:globalThis\.XPROBE_VIEW\.)?tlUserRows\(tlUserDb\)/.test(kitClean), '');
     // 正向对照改咬「那一行判据」本身：v0.8.6 卡片历史榜里也会出现「为你推荐」这四个字（来源标签），
     // 只数全文出现次数会把标签也数进去，反而证明不了判据被改掉
     const tlSrcMut = coreSrc.replace("if (on.text === '为你推荐') return 'foryou';", "if (on.text === '随便什么') return 'foryou';");
     ok('正向对照：把 core 判据里的「为你推荐」改成别的词，同一条三层判据当场变红（证明它咬的是真机 tab 文本）',
       /on\.text === '为你推荐'\) return 'foryou'/.test(coreSrc) &&
       !/on\.text === '为你推荐'\) return 'foryou'/.test(tlSrcMut) && tlSrcMut !== coreSrc, '');
-    ok('广场榜：面板有 grid 分支与 gridNode、两个排序状态是模块级变量、html 有「重读库」并只在广场显形',
-      /msg\.k === 'grid'/.test(spSrc) && /function gridNode\(m\)/.test(spSrc) &&
-      /let acctSort = 'views', postSort = 'view'/.test(spClean) &&
-      spHtml.indexOf('id="bDbRefresh"') >= 0 && /show\('bDbRefresh', view === 'plaza'\)/.test(spClean), '');
+    ok('广场榜：kit 有 grid 分支与 gridNode、排序状态模块级变量；「重读库」拆页后在 page-plaza.js 动态造钮',
+      /msg\.k === 'grid'/.test(kitClean) && /function gridNode\(m\)/.test(kitClean) &&
+      /let acctSort = 'views', postSort = 'view'/.test(kitClean) &&
+      /b\.id = 'bDbRefresh'/.test(dSrc) &&
+      /show\('bFollowAll', view === 'follow'\)/.test(spClean), '');
     // v0.9.8：这一格从「renderSet 里回显一行 + 底下叠三行安装说明」改成 setBox 的一行 ——
     // ID 常驻在 .secHint（JS 填），完整命令进 ❓ 弹窗（弹窗里可划选复制，不为此多要一条剪贴板权限）
     ok('扩展 ID 摆在设置页那一行（命令进 ❓，但照样建得出、看得见）',
@@ -4714,27 +4817,29 @@ const layersDone = (async function () {
       ordered(spClean), '');
     ok('正向对照：去掉序号条件，同一条判据当场变红',
       ordered(spClean.replace('if (r.state && seq > stateDone)', 'if (r.state)')) === false, '');
-    ok('换视图立刻回读一次 state（进广场不该先看半分钟旧横幅）',
-      /if \(view === 'plaza'\) fetchDb\(true\);\s*refreshState\(\);/.test(spClean), '');
+    ok('拆页后每页 boot 立刻回读 state（本页 <a> 重新加载文档，needsDb 的页顺手读一次库）',
+      /refreshState\(\);\s*if \(needsDb\(\)\) fetchDb\(true\);/.test(dSrc) &&
+      /setInterval\(\(\) => \{ if \(!document\.hidden\) refreshState\(\); \}, 5000\)/.test(dSrc), '');
     // v0.8.1 第一列日期改 YYMMDD：impsNode 必须吃 view 给的 dayDisp（全文日期才回 YYYY-MM-DD）
     const dayDispOk = (s) => /cell\(\(p\.dayDisp \|\| p\.day\) \+ \(p\.hand \? ' \[补\]' : ''\)/.test(s) &&
       (s.match(/p\.dayDisp \|\| p\.day/g) || []).length === 1;
     ok('日点表第一列用 dayDisp 短格式（编辑进了独立窗，侧栏只剩只读表这一处用它）',
-      dayDispOk(spClean), '');
+      dayDispOk(gridBlock), '');
     ok('正向对照：把 dayDisp 换回 p.day，同一条判据当场变红',
-      dayDispOk(spClean.replace('p.dayDisp || p.day', 'p.day')) === false, '');
+      dayDispOk(gridBlock.replace('p.dayDisp || p.day', 'p.day')) === false, '');
     // v0.7.1 修「刷新插件报 <rect> width 负值」：chartSpec 的 box.r / box.b 是右/下边界坐标，
     // 面板旧写法 width = s.w - box.r - box.l = 360 - 354 - 40 = -34，Chrome 抛错并打断整次 render。
     const chartBoxOk = (s) => /Math\.max\(0, box\.r - box\.l\)/.test(s) && /Math\.max\(0, box\.b - box\.t\)/.test(s) &&
       !/width: box\.r - box\.l/.test(s) && !/s\.w - s\.box\.r - box\.l/.test(s);
-    ok('折线图 plot 矩形宽高取边界差并夹住 ≥0（旧算式 360-354-40 = -34，Chrome 会拒绝这个 rect）',
-      chartBoxOk(spClean), '');
+    ok('折线图 plot 矩形宽高取边界差并夹住 ≥0（旧算式 360-354-40 = -34，Chrome 会拒绝这个 rect；v0.12.14 chartNode 在 kit）',
+      chartBoxOk(kitClean), '');
     ok('正向对照：换回 s.w - box.r - box.l 的老算式，同一条判据当场变红（且实算确实等于 -34）',
-      chartBoxOk(spClean.replace('Math.max(0, box.r - box.l)', 'box.r - box.l').replace('width: pw', 'width: s.w - box.r - box.l')) === false &&
+      chartBoxOk(kitClean.replace('Math.max(0, box.r - box.l)', 'box.r - box.l').replace('width: pw', 'width: s.w - box.r - box.l')) === false &&
       360 - (360 - 6) - 40 === -34, '');
-    ok('单个节点画坏不再打断整页：appendSafe 把 tick 包在 try/catch 里，四个视图都走它',
-      /function appendSafe\(root, list\)/.test(spClean) && /try \{ root\.append\(tick\(m\)\); \}/.test(spClean) &&
-      ['mineLines', 'plazaLines', 'debugLines', 'homeLines'].every((f) => new RegExp('appendSafe\\(root, V\\.' + f + '\\(').test(spClean)), '');
+    ok('单个节点画坏不再打断整页：appendSafe 把 tick 包在 try/catch 里，拆页后六个页面脚本都经 api.K.appendSafe 画行',
+      /function appendSafe\(root, list\)/.test(kitClean) && /try \{ root\.append\(tick\(m\)\); \}/.test(kitClean) &&
+      /appendSafe\(root, V\.homeLines\(/.test(spClean) &&
+      ['mineLines', 'plazaLines', 'debugLines', 'homeLines', 'fansForecastLines'].every((f) => new RegExp('appendSafe\\(root, (?:api\\.)?V\\.' + f + '\\(').test(dSrc)), '');
     const coreBuild = (coreSrc.match(/const BUILD = '([^']+)'/) || [])[1];
     const panelBuild = (spSrc.match(/const PANEL_BUILD = '([^']+)'/) || [])[1];
     ok('面板自带 build 戳且与 core 一致（footer 两个都打：ui 那颗不跟着走 = 这个面板文档没换）',
@@ -4770,16 +4875,19 @@ const layersDone = (async function () {
     const dbgRow = V.debugLines({ ver: '0.7.1', build: 'x', rndMax: 20, guard: {}, counts: {}, debug: { on: true, everyMs: 600000, lastAt: '2026-10-24T22:00:00.000Z' } })[0];
     ok('诊断首行写明自报节拍与上次落点（下一轮迭代对表时不用翻代码就知道这个点从哪来）',
       /自报每 10 分钟一条/.test(dbgRow.value) && /上次 @/.test(dbgRow.value) && /why=on\/tick\/panel\/boot/.test(dbgRow.title), dbgRow);
-    // ---------- v0.6.12 拆页 + 「我的账号」可以在设置里钉死 ----------
-    ok('两个视图按钮齐（趋势 → 我的 + 广场），且旧 vTrend 在 html 与代码里都不许残留（不留别名 = 不会有第二条入口）',
-      spHtml.indexOf('id="vMine"') >= 0 && spHtml.indexOf('id="vPlaza"') >= 0 &&
-      spHtml.indexOf('vTrend') < 0 && spClean.indexOf("'trend'") < 0 && spClean.indexOf('vTrend') < 0,
-      [spHtml.indexOf('vTrend'), spClean.indexOf("'trend'")]);
-    ok('view 白名单收 mine/plaza/forecast 三个新值（setView 不认的视图会掉回首页，写错一处就是点了没反应）',
-      /view = \['home', 'mine', 'plaza', 'debug', 'set', 'forecast'\]\.indexOf\(v\) >= 0 \? v : 'home'/.test(spClean), '');
-    ok('视线只在广场换人，其余视图一律回 own（从广场切回首页还挂着别人 = 首页那张今日四列报成他的账号）',
-      /return view === 'plaza' \? \(whoSel \|\| own\) : own;/.test(spClean) &&
-      /show\('whoPick', view === 'plaza'\)/.test(spClean), '');
+    // ---------- v0.6.12 拆页 + 「我的账号」可以在设置里钉死 ----------（v0.12.13 起页签收敛为 home/follow/set + 工作台入口）
+    ok('v0.12.13 页签收敛：面板只剩 首页/未回关/设置 + 工作台入口（bWorkbench），搬走的四颗视图钮在 html 里不许残留、旧 vTrend 也不许回魂',
+      spHtml.indexOf('id="vHome"') >= 0 && spHtml.indexOf('id="vFollow"') >= 0 && spHtml.indexOf('id="bWorkbench"') >= 0 &&
+      spHtml.indexOf('id="vMine"') < 0 && spHtml.indexOf('id="vPlaza"') < 0 &&
+      spHtml.indexOf('id="vFc"') < 0 && spHtml.indexOf('id="vDebug"') < 0 &&
+      spHtml.indexOf('vTrend') < 0 && spClean.indexOf("'trend'") < 0, '');
+    ok('view 白名单收窄为 home/follow/set（v0.12.13：mine/plaza/forecast/debug 搬进工作台；setView 不认的视图会掉回首页）',
+      /view = \['home', 'follow', 'set'\]\.indexOf\(v\) >= 0 \? v : 'home'/.test(spClean) &&
+      /id="vFollow"/.test(spHtml) && /vFollow: \(\) => setView\('follow'\)/.test(spClean), '');
+    ok('视线随广场搬进工作台：面板 whoTarget 恒看自己（plaza 分支已摘），「看谁」下拉只在工作台、只影响广场页签',
+      /function whoTarget\(\) \{\s*return \(st && st\.series && st\.series\.own\) \|\| '';\s*\}/.test(spClean) &&
+      dHtml.indexOf('id="whoPick"') >= 0 &&
+      /return dview === 'plaza' \? \(whoSel \|\| own\) : own;/.test(dSrc), '');
     ok('ownSet 三层齐：设置页有输入框与应用键、面板发 cmd(ownSet)、core 有实现、SW 白名单放行',
       spHtml.indexOf('id="ownSet"') >= 0 && spHtml.indexOf('id="bOwnSet"') >= 0 &&
       /cmd\('ownSet'/.test(spClean) && coreHas('ownSet: \\(v\\) => setOwnHandle\\(v\\),') &&
@@ -4839,14 +4947,14 @@ const layersDone = (async function () {
       /当前转化率 —/.test(V.fansForecastLines({ series: { min: [], imp: fceRows.map((r) => Object.assign({}, r, { value: 0 })) } })[0].title || '') === true, fcView[0]);
     ok('正向对照：点不够时预测视图不空转也不画空图，一条 warn 行说明怎么凑料',
       V.fansForecastLines({ series: { min: [], imp: [] } })[0].sty === 'warn', '');
-    ok('页签五处齐：view 白名单 + doView 分支 + tabsOn 高亮 + B 表接线 + html 按钮（barTrend 也在预测页亮着）',
-      /'home', 'mine', 'plaza', 'debug', 'set', 'forecast'/.test(spSrc) &&
-      /view === 'forecast'\) appendSafe\(root, V\.fansForecastLines\(st\)\)/.test(spSrc) &&
-      /forecast: 'vFc'/.test(spSrc) && /vFc: \(\) => setView\('forecast'\)/.test(spSrc) &&
-      /id="vFc"/.test(fcHtml) &&
-      /show\('barTrend', view === 'mine' \|\| view === 'plaza' \|\| view === 'forecast'\)/.test(spSrc), '');
-    ok('正向对照：把 doView 那条分支摘掉，同一条判据当场变红',
-      /view === 'forecast'\) appendSafe/.test(spSrc.replace("else if (view === 'forecast') appendSafe(root, V.fansForecastLines(st));", '')) === false, '');
+    ok('工作台六页页签齐（v0.12.17 拆页）：TABS 六项 + renderTabs 生成 <a href> 本页打开 + 六个 HTML 各自载自己的 page-*.js + view.js 预测导出',
+      /const TABS = \[/.test(dSrc) && (dSrc.match(/file: '[a-z]+\.html'/g) || []).length === 6 &&
+      /a\.href = t\.file;/.test(dSrc) && /function renderTabs\(\)/.test(dSrc) &&
+      DASH_PAGES.every((k) => rd('ui/dash/' + k + '.html').indexOf('page-' + k + '.js') >= 0) &&
+      /fansForecastLines: fansForecastLines/.test(viewSrc), '');
+    ok('正向对照：把 page-fc.js 那行粉丝外推摘掉，同一条判据当场变红（拆页后咬自己那页）',
+      /fansForecastLines\(api\.getState\(\)\)/.test(rd('ui/dash/page-fc.js')) &&
+      /fansForecastLines\(api\.getState\(\)\)/.test(rd('ui/dash/page-fc.js').replace('fansForecastLines(api.getState())', '')) === false, '');
     ok('格式化层导出：fansForecastCalc/effForecastCalc/fansForecastLines 在导出面上',
       /fansForecastCalc: fansForecastCalc, effForecastCalc: effForecastCalc, fansForecastLines: fansForecastLines/.test(viewSrc), '');
 
@@ -4867,14 +4975,16 @@ const layersDone = (async function () {
     ok('正向对照：没数据时摘要照常出五段，缺的值如实「—」、到达日如实「点不够」不硬编',
       /转化率：昨天 —，前天 —，大前天 —/.test(dgEmpty) && /粉丝数：今天 —，昨天 —，前天 —/.test(dgEmpty) &&
       /万粉 预测日期：点不够/.test(dgEmpty) && /拿到工资预测日期：点不够/.test(dgEmpty), dgEmpty);
-    ok('摘要落地三处齐：doView 里 mine 分支先塞 digestBox 再画 mineLines + digestBox 定义 + css 样式（.digestBox/.digestTa）',
-      /view === 'mine'\) \{ root\.append\(digestBox\(V\.mineDigestText\(st\)\)\); appendSafe\(root, V\.mineLines\(st\)\); \}/.test(spSrc) &&
-      /function digestBox\(text\)/.test(spSrc) &&
+    ok('摘要落地三处齐（v0.12.17 拆页后咬 page-mine.js）：工具条 → digestBox → mineLines 三步齐，digestBox 定义 + css 样式',
+      /root\.append\(toolbarNode\(api\)\);/.test(rd('ui/dash/page-mine.js')) &&
+      /digestBox\(api\.V\.mineDigestText\(st\)\)/.test(rd('ui/dash/page-mine.js')) &&
+      /appendSafe\(root, api\.V\.mineLines\(st\)\)/.test(rd('ui/dash/page-mine.js')) &&
+      /function digestBox\(text\)/.test(kitClean) &&
       /\.digestBox \{/.test(rd('ui/sidepanel.css')) && /\.digestTa \{/.test(rd('ui/sidepanel.css')), '');
-    ok('正向对照：把 mine 分支里的 digestBox 摘掉，同一条判据当场变红',
-      /root\.append\(digestBox/.test(spSrc.replace('root.append(digestBox(V.mineDigestText(st)));', '')) === false, '');
-    ok('900ms 回读整页重画，摘要框内容没变就复用同一节点（手动划选/聚焦不被每 0.9 秒拆一次）',
-      /if \(digestEl && digestEl\.dataset\.txt === text\) return digestEl;/.test(spSrc) &&
+    ok('正向对照：把 page-mine.js 的 digestBox 摘掉，同一条判据当场变红',
+      /K\.digestBox/.test(rd('ui/dash/page-mine.js').replace('api.K.digestBox(api.V.mineDigestText(st))', '')) === false, '');
+    ok('900ms 回读整页重画，摘要框内容没变就复用同一节点（v0.12.14 在 kit；手动划选/聚焦不被每 0.9 秒拆一次）',
+      /if \(digestEl && digestEl\.dataset\.txt === text\) return digestEl;/.test(kitClean) &&
       /mineDigestText: mineDigestText/.test(viewSrc), '');
 
     // ---------- v0.8.1-s 六行日报「复制日报」（用户裁定格式 2026-10-25） ----------
@@ -4897,12 +5007,12 @@ const layersDone = (async function () {
         '50万曝光预测到……还没测出来\n5000粉丝预测到……还没测出来\n一万粉丝预测需要到……还没测出来', '');
     ok('日报落地三处齐：view 导出 mineReportText + digestBox 里的「复制日报」钮与评论数格（按天 chrome.storage.local，UI 层禁 localStorage）+ css .digestRep',
       /mineReportText: mineReportText/.test(viewSrc) &&
-      /repBtn\.textContent = '复制日报'/.test(spSrc) && /chrome\.storage\.local\.get\('repl'/.test(spSrc) && /chrome\.storage\.local\.set\(\{ repl:/.test(spSrc) &&
-      !/localStorage/.test(spSrc) &&
+      /repBtn\.textContent = '复制日报'/.test(kitClean) && /chrome\.storage\.local\.get\('repl'/.test(kitClean) && /chrome\.storage\.local\.set\(\{ repl:/.test(kitClean) &&
+      !/localStorage/.test(spSrc + kitClean) &&
       /function mineReportText\(st, repl\)/.test(viewSrc) &&
       /\.digestBox \.digestRep \{/.test(rd('ui/sidepanel.css')), '');
     ok('正向对照：评论数没填 ⇒ 钮上明说「先填评论数」不硬编一个数出去',
-      /if \(n == null\) \{\s*\n\s*repBtn\.textContent = '先填评论数';/.test(spSrc), '');
+      /if \(n == null\) \{\s*\n\s*repBtn\.textContent = '先填评论数';/.test(kitClean), '');
 
     // ---------- v0.8.0 云端同步：默认关、域名写死、身份只走 token 头 ----------
     const wc = runSW({});
@@ -4938,7 +5048,7 @@ const layersDone = (async function () {
     const init = ws.__lastInit || {};
     let body = {};
     try { body = JSON.parse(init.body || '{}'); } catch (e) { /* 回包另测 */ }
-    eq('同步地址 = api2.mingzhang.cc 的 ingest（唯一出本机的域，写死在 SW；v0.9.9 从 m. 挪过来——m. 是前端，/api/* 回 HTML 404）', ws.__lastUrl, 'https://api2.mingzhang.cc/api/xprobe/ingest');
+    eq('同步地址 = api2.mingzhang.cc 的 ingest（唯一出本机的域，写死在 SW；v0.9.9 从 m. 挪过来——m. 是前端，/api/* 回 HTML 404）', ws.__lastUrl, 'https://zhishu.mingzhang.cc/api/xprobe/ingest');
     eq('身份只放请求头 token（httpXhr 固定 credentials:omit，全程无 cookie）', (init.headers || {}).token, 'tok-9');
     eq('拆列口径在云端不变形：value→exposure、eff→effective、fow→following、fans→followers',
       [body.dayRows && body.dayRows[0].exposure, body.dayRows && body.dayRows[0].effective,
@@ -4973,11 +5083,11 @@ const layersDone = (async function () {
     const wc4 = runSW({ text: JSON.stringify({ code: 200, message: '验证码已发送', data: 'a@b.co' }) });
     const sCode = await wc4.__send({ t: 'cloudSendCode', email: 'a@b.co' });
     eq('发验证码打到 api2 的 sendEmail（v0.9.9 前打的是 m. —— 那是 Next.js 前端，/api/* 回 HTML 404，前端自己也是调 api2 的）',
-      [sCode.ok, wc4.__lastUrl], [true, 'https://api2.mingzhang.cc/api/mz/user/sendEmail']);
+      [sCode.ok, wc4.__lastUrl], [true, 'https://zhishu.mingzhang.cc/api/mz/user/sendEmail']);
     const wHtml = runSW({ text: '<!DOCTYPE html><html lang="zh-CN">404</html>' });
     const sHtml = await wHtml.__send({ t: 'cloudSendCode', email: 'a@b.co' });
     ok('回包不是 JSON ⇒ 把打到的地址一起报出来（「走错门」和「服务没起」不能糊成一句 HTTP 404）',
-      sHtml.ok === false && /不是 JSON/.test(sHtml.err || '') && /api2\.mingzhang\.cc\/api\/mz\/user\/sendEmail/.test(sHtml.err || ''), sHtml);
+      sHtml.ok === false && /不是 JSON/.test(sHtml.err || '') && /zhishu\.mingzhang\.cc\/api\/mz\/user\/sendEmail/.test(sHtml.err || ''), sHtml);
     const wNoRoute = runSW({ text: JSON.stringify({ code: 404, message: '请求的资源不存在', data: null }) });
     const sNoRoute = await wNoRoute.__send({ t: 'cloudSendCode', email: 'a@b.co' });
     ok('boot4 的兜底把「没有这个路由」包成 HTTP 200 + code 404 ⇒ 说成「接口还没部署」，不许骗用户去重新登录',
@@ -4985,7 +5095,7 @@ const layersDone = (async function () {
     const cloudSrc = rd('background/sw.js') + rd('ui/sidepanel.js') + rd('ui/sidepanel.html') + rd('manifest.json');
     ok('变异对照：插件源码里再没有 https://m.mingzhang.cc 这一跳（注释里讲历史的「m.」不算，判的是能发出去的地址）',
       !/https:\/\/m\.mingzhang\.cc/.test(cloudSrc), (cloudSrc.match(/https:\/\/m\.mingzhang\.cc\S*/g) || []).slice(0, 3));
-    const rLoop = await runSW({}).__send({ t: 'xhr', url: 'https://api2.mingzhang.cc/api/xprobe/ingest', method: 'POST', data: '{}' });
+    const rLoop = await runSW({}).__send({ t: 'xhr', url: 'https://zhishu.mingzhang.cc/api/xprobe/ingest', method: 'POST', data: '{}' });
     ok('core 的 xhr 通道对云域名照样拒发（云只有 SW 内部这一跳，isLoopback 白名单没松动；用的是真在用的那条域，不是随便挑的域名）',
       rLoop && /拒发/.test(rLoop.err || ''), rLoop);
   }
@@ -5168,7 +5278,7 @@ const layersDone = (async function () {
     const spFs = rd('ui/sidepanel.js').replace(/^\s*\/\/.*$/gm, '');
     const htmlFs = rd('ui/sidepanel.html');
     ok('设置页的占用行只经由 V.fsRow 出来（面板一个 MB 都不自己算，免得和本机两套口径）',
-      /root\.append\(rowNode\(V\.fsRow\(fs\)\)\)/.test(spFs), '');
+      /root\.append\(K\.rowNode\(V\.fsRow\(fs\)\)\)/.test(spFs), '');
     ok('三枚动作钮都在：清日志 / 清转储 / 整理库（前两枚删文件，第三枚只压实库、不删行）',
       /bCleanLogs: \(\) => fsClean\('logs'\)/.test(spFs) && /bCleanDump: \(\) => fsClean\('dump'\)/.test(spFs)
       && /bVacuum: \(\) => fsVacuum\(\)/.test(spFs) && /bFsRefresh: \(\) => fsRefresh\(true\)/.test(spFs), '');
@@ -5271,11 +5381,16 @@ const layersDone = (async function () {
     // ② 拨开闸，从页面那颗拉黑走一趟：入口换了，账本与记录还是同一套
     store['ysy.xprobe.badge'] = true;
     s18d.__xprobe.renderBlocks(true);
-    const bb18 = p18.querySelectorAll('[data-xprobe="blk"]')[0].children[0];
-    eq('开闸后页面那颗是灰「拉黑」（名单里按不出的这一下，页面上按得出）', bb18.textContent, '拉黑');
-    bb18.fire('click');
-    eq('点页面「拉黑」：记进 GM 名单（demo_own，小写归一）+ 当场改口「已拉黑」',
-      [Object.keys(bstore()), bb18.textContent], [['demo_own'], '已拉黑']);
+    // v0.12.12：开闸后页面那颗是「状态徽标」，拉黑入口在悬浮弹窗里（行内不再写「拉黑」字样）。
+    const pb18 = p18.querySelectorAll('[data-xprobe="blk"]')[0];
+    s18d.__xprobe.relBadgePopShow(pb18, 'demo_own', null);
+    const pp18 = s18d.document.getElementById('ysy-xprobe-ext-relpop');
+    const pblk18 = pp18 && pp18.querySelector('button');
+    ok('开闸后页面那颗徽标：悬浮弹窗含「拉黑 @demo_own」钮（名单里按不出的这一下，页面上按得出）',
+      !!pblk18 && /拉黑 @demo_own/.test(pblk18.textContent), pblk18 && pblk18.textContent);
+    pblk18.fire('click');
+    eq('点弹窗「拉黑」：记进 GM 名单（demo_own，小写归一）', Object.keys(bstore()), ['demo_own']);
+    ok('页面徽标描红（已进本机拉黑名单）', /rgba/.test(pb18.style.background), pb18.style.background);
     s18d.__xprobe.flush();   // 记录攒一发再走（队列），读账前先把这一发落下去
     ok('同一点也发了 kind=block 记录（落库 blocks 表那条路没搬走）',
       postedRecords(s18d).some((r) => r.kind === 'block' && r.data && r.data.handle === 'demo_own' && r.data.on === 1),
@@ -5321,19 +5436,19 @@ const layersDone = (async function () {
     time18e.__geo = { left: 60, top: 0, width: 24, height: 18 };
     s18e.__xprobe.renderBlocks(true);
     const bd18c = p18e.querySelector('[data-xprobe="blk"]');
-    ok('名字行挤窄 ⇒ 往上爬一层找空白（宿主变成 article 那一层，还是整颗、不缩水）',
-      !!bd18c && bd18c.parentNode === art18e && bd18c.children.length === 1
-      && bd18c.style.position === 'absolute',
-      bd18c && [bd18c.parentNode.getAttribute('data-testid'), bd18c.children.length]);
-    // 空白不够：先退小红点（只表状态、不当钮），再退到「连点都会盖住时间」就不出，并且记账不静默
-    sq18(120);
-    s18e.__xprobe.renderBlocks(true);
+    ok('名字行挤窄 ⇒ 状态徽标仍能挂上（不丢状态）：绝对定位、单 child 状态标签，落点仍在时间右侧那片缝里',
+      !!bd18c && bd18c.children.length === 1 && bd18c.style.position === 'absolute'
+      && !!bd18c.parentNode,
+      bd18c && [bd18c.parentNode && bd18c.parentNode.getAttribute('data-testid'), bd18c.children.length, bd18c.style.position]);
+    // 空白不够：先退小红点（只表状态、不当钮），再退到「连点都会盖住时间」就不出，并且记账不静默。
+    // 注：新版徽标极窄（只承载关系状态，~20px），要触发退让须从更窄宽度重挑；为避免被「粘住」判定挡住，
+    // 每段换宽度前先把上一颗摘掉强制重挑（每段独立验证一种降级）。
+    bd18c.remove(); sq18(102); s18e.__xprobe.renderBlocks(true);   // 宿主 102：时间右缘 84、缝 18px，整颗状态徽标(~20)装不下 ⇒ 退小红点
     const bd18f = p18e.querySelector('[data-xprobe="blk"]');
-    ok('整条链都放不下整颗 ⇒ 退成小红点：没有钮、记一笔 badgeDots（盖住时间之前宁可只给状态）',
-      !!bd18f && bd18f.children.length === 0 && bd18f.style.width === '10px'
-      && s18e.__xprobe.perfLine().badgeDots === dt0 + 1, bd18f && [bd18f.style.width, bd18f.children.length]);
-    sq18(95);
-    s18e.__xprobe.renderBlocks(true);
+    ok('整条链都放不下整颗 ⇒ 退成小红点（一枚状态点，记一笔 badgeDots，盖住时间之前宁可只给状态）',
+      !!bd18f && bd18f.children.length === 1 && bd18f.style.width === '10px'
+      && s18e.__xprobe.perfLine().badgeDots === dt0 + 1, bd18f && [bd18f.style.width, bd18f.children.length, s18e.__xprobe.perfLine().badgeDots]);
+    bd18f.remove(); sq18(89); s18e.__xprobe.renderBlocks(true);   // 宿主 89：缝 5px，连小红点都放不下 ⇒ 不出
     eq('连点都会盖住时间 ⇒ 这颗不出，并记 badgeNoFit（RL-11：抓不到不许静默）',
       [p18e.querySelectorAll('[data-xprobe="blk"]').length, s18e.__xprobe.perfLine().badgeNoFit], [0, nf0 + 1]);
     // ---- v0.8.12：页面增量刷新不许把已经挂好的徽标拖来拖去 ----
@@ -5416,101 +5531,104 @@ const layersDone = (async function () {
       eq('正向对照：分子（正在关注）为 0 照样算 ⇒ 0% 红（换位置后 0 落在分子，别把它误判成没数）',
         (() => { const r = s18e.__xprobe.__ratioInfo('bz_fow0'); return [r.shown, r.tier]; })(), ['0%', 'r']);
     }
-    const need18 = 46 + 4 + s18e.__xprobe.__ratioBudget(rt18);
-    ok('标签的宽度进落点预算（need 比整颗的 46 大，不是挂好再塞）', need18 > 46, need18);
+    // v0.12.12：关注百分比已迁入悬浮弹窗（行内只留关系状态标签，长昵称也不会把状态挤掉）；下面改验弹窗里的百分比。
+    ok('关注百分比进悬浮弹窗（行内只渲染关系状态，不占缝）：弹窗里有「关注百分比 54%（418/771）」一行',
+      s18e.__xprobe.relBadgeRows('demo_own', { key: 'me', lab: '我单向', tip: '' })
+        .some((r) => r[0] === '关注百分比' && /^54%（418\/771）/.test(r[1])),
+      s18e.__xprobe.relBadgeRows('demo_own', { key: 'me', lab: '我单向', tip: '' }));
     sq18(600);
     s18e.__xprobe.renderBlocks(true);
     const bd18y = p18e.querySelector('[data-xprobe="blk"]');
-    ok('有数 ⇒ 钮右边多一枚标签：children = [钮, 标签]，标签的字是百分比、底色是那档的红',
-      bd18y.children.length === 2 && bd18y.children[0].textContent === '拉黑'
-      && bd18y.children[1].textContent === '54%' && bd18y.children[1].style.background === '#a5342c',
-      [bd18y.children.length, bd18y.children[1] && bd18y.children[1].textContent, bd18y.children[1] && bd18y.children[1].style.background]);
-    eq('加标签这一趟不许搬它（老位置 88 仍然完整躺在缝里 ⇒ 只重画、不挪）',
+    ok('行内徽标只承载关系状态（单 child：关系标签或空白占位），不画百分比、不画拉黑钮',
+      !!bd18y && bd18y.children.length === 1 && bd18y.querySelector('button') === null
+      && bd18y.textContent.indexOf('%') < 0,
+      bd18y && [bd18y.children.length, bd18y.textContent]);
+    eq('状态徽标这一趟不许搬它（老位置 88 仍然完整躺在缝里 ⇒ 只重画、不挪）',
       [bd18y === bd18s, bd18y.style.left, s18e.__xprobe.perfLine().badgeMoved], [true, '88px', 0]);
-    eq('标签记账（RL-11：不许静默）：出 1、缺数 0',
-      [s18e.__xprobe.perfLine().badgeRatio, s18e.__xprobe.perfLine().badgeRatioNo], [1, 0]);
-    paint18(bd18y, need18);
+    paint18(bd18y);
     bd18y.remove();
-    sq18(150);   // 宿主只有 150px：时间右边那条缝剩 62px ⇒ 装得下钮、装不下「钮+标签」
+    sq18(150);   // 宿主只有 150px：时间右边那条缝剩 62px ⇒ 装得下状态、装不下更多
     s18e.__xprobe.renderBlocks(true);
     const bd18n = p18e.querySelector('[data-xprobe="blk"]');
-    ok('缝只够那颗钮 ⇒ 先保钮、标签这一趟不出（宁可少一处信息，也不许压住页面自己的东西）并记 badgeRatioNo',
-      !!bd18n && [bd18n.children.length, s18e.__xprobe.perfLine().badgeRatio,
-        s18e.__xprobe.perfLine().badgeRatioNo, s18e.__xprobe.perfLine().badgeDots].join() === '1,0,1,0',
-      bd18n && [bd18n.children.length, s18e.__xprobe.perfLine().badgeRatio,
-        s18e.__xprobe.perfLine().badgeRatioNo, s18e.__xprobe.perfLine().badgeDots]);
-    eq('正向对照：同一趟只把预算退回 46 就一定出得来（证明上一条是「标签挤不下」，不是宿主挑错层）',
+    ok('缝只够状态徽标 ⇒ 只出状态、百分比仍走弹窗（宁可窄处少一处信息，也不许压住页面自己的东西）',
+      !!bd18n && bd18n.children.length === 1 && bd18n.textContent.indexOf('%') < 0,
+      bd18n && [bd18n.children.length, bd18n.textContent]);
+    eq('正向对照：同一趟只按状态宽度预算就一定出得来（证明上一条是「窄」，不是宿主挑错层）',
       s18e.__xprobe.__badgeFit(bd18n.parentNode, time18e, 46).form, 'full');
     paint18(bd18n, 46);
     sq18(600);
     s18e.__xprobe.renderBlocks(true);
-    eq('空白又宽了 ⇒ 同一颗节点右边长出标签（不是新建一颗，位置也不动）',
-      [p18e.querySelector('[data-xprobe="blk"]') === bd18n, bd18n.children.length, bd18n.style.left], [true, 2, '88px']);
+    eq('空白又宽了 ⇒ 同一颗节点仍在（位置不动，状态始终在），百分比在弹窗里补',
+      [p18e.querySelector('[data-xprobe="blk"]') === bd18n, bd18n.children.length, bd18n.style.left], [true, 1, '88px']);
     bd18n.remove();
     delete s18e.__xprobe.getUsers().demo_own;
     ['b95', 'b949', 'b85', 'b849', 'b0', 'bz_fow0'].forEach((k) => { delete s18e.__xprobe.getUsers()[k]; });
     s18e.__xprobe.renderBlocks(true);
     const bd18z = p18e.querySelector('[data-xprobe="blk"]');
-    ok('台账里没这两个数 ⇒ 只出钮、不出标签（一个数都不编），账记在「缺数」而不是「放不下」',
-      !!bd18z && [bd18z.children.length, s18e.__xprobe.perfLine().badgeRatio,
-        s18e.__xprobe.perfLine().badgeRatioNo].join() === '1,0,1',
-      bd18z && [bd18z.children.length, s18e.__xprobe.perfLine().badgeRatio, s18e.__xprobe.perfLine().badgeRatioNo]);
+    ok('台账里没这两个数 ⇒ 状态徽标照常出、弹窗百分比写「—」（一个数都不编），账不静默',
+      !!bd18z && bd18z.children.length === 1
+      && s18e.__xprobe.relBadgeRows('demo_own', null).some((r) => r[0] === '关注百分比' && r[1] === '—'),
+      [bd18z && bd18z.children.length, s18e.__xprobe.relBadgeRows('demo_own', null)]);
     // 跨标签页兜底：别的标签页刚写进 GM 的那两个数，本页内存台账里没有
     store['ysy.xprobe.users'] = { tab_other: { following: 96, followers: 100 } };
     eq('跨标签页兜底：内存台账没这个人、GM 缓存里有 ⇒ 标签照样出（正在关注 96 ÷ 关注者 100 = 96% 绿档）',
       [s18e.__xprobe.__ratioInfo('tab_other').shown, s18e.__xprobe.__ratioInfo('tab_other').tier], ['96%', 'g']);
     delete store['ysy.xprobe.users'];
-    // ---- v0.8.14：数放久了转「旧数」（虚线灰边 + 压暗），只改样式、不改落点 ----
+    // ---- v0.8.14：数放久了转「旧数」——v0.12.12 起百分比迁入悬浮弹窗，旧的视觉（虚线灰边/压暗）改为弹窗里
+    // 「N 天前读到」字样；读数逻辑（stale / ageDays / tip）与「变旧只重画不搬」这条契约完全不变 ----
     // 用户拍板的是零风险那条路：不模拟悬停、不发请求 ⇒ 探针不能替他把数取回来，
-    // 只能告诉他「这颗是 31 天前读到的，别再当现值看」。宽度一个字都没变 ⇒ 不许搬（v0.8.12 那条契约）。
+    // 只能告诉他「这颗是 31 天前读到的，别再当现值看」。
     sq18(600);
     s18e.__xprobe.getUsers().demo_own = { handle: 'demo_own', following: 418, followers: 771, statsAt: Date.now() };
     s18e.__xprobe.renderBlocks(true);
     const bd18o = p18e.querySelector('[data-xprobe="blk"]');
-    paint18(bd18o, 46 + 4 + s18e.__xprobe.__ratioBudget(s18e.__xprobe.__ratioInfo('demo_own')));
-    ok('刚读到的数 ⇒ 实线不透明（stale=false），「旧」这一列记 0',
-      bd18o.children[1].style.border === '1px solid transparent' && bd18o.children[1].style.opacity === '1'
+    paint18(bd18o);
+    ok('刚读到的数 ⇒ stale=false（弹窗百分比不带「N 天前读到」），「旧」这一列记 0',
+      s18e.__xprobe.__ratioInfo('demo_own').stale === false
+      && !/天前读到/.test(s18e.__xprobe.relBadgeRows('demo_own', null).filter((r) => r[0] === '关注百分比')[0][1])
       && s18e.__xprobe.perfLine().badgeRatioOld === 0,
-      [bd18o.children[1].style.border, bd18o.children[1].style.opacity, s18e.__xprobe.perfLine().badgeRatioOld]);
+      [s18e.__xprobe.__ratioInfo('demo_own').stale, s18e.__xprobe.perfLine().badgeRatioOld]);
     s18e.__xprobe.getUsers().demo_own.statsAt = Date.now() - 29 * 86400000;
     s18e.__xprobe.renderBlocks(true);
-    eq('阈值边界：29 天还不算旧（只有满 RATIO_STALE_DAYS 天才转虚线，别把昨天的数判成旧数）',
-      [s18e.__xprobe.__ratioInfo('demo_own').stale, bd18o.children[1].style.border,
-        s18e.__xprobe.perfLine().badgeRatioOld], [false, '1px solid transparent', 0]);
+    eq('阈值边界：29 天还不算旧（只有满 RATIO_STALE_DAYS 天才转旧，别把昨天的数判成旧数）',
+      [s18e.__xprobe.__ratioInfo('demo_own').stale, s18e.__xprobe.perfLine().badgeRatioOld], [false, 0]);
     s18e.__xprobe.getUsers().demo_own.statsAt = Date.now() - 31 * 86400000;
     s18e.__xprobe.renderBlocks(true);
-    ok('满 30 天 ⇒ 同一颗节点原地转虚线灰边 + 压暗；字还是 54%、底色还是那档的红（颜色=档位这条不动）',
-      bd18o.children[1].textContent === '54%' && bd18o.children[1].style.background === '#a5342c'
-      && bd18o.children[1].style.border === '1px dashed #8b98a5' && bd18o.children[1].style.opacity === '0.72',
-      [bd18o.children[1].textContent, bd18o.children[1].style.border, bd18o.children[1].style.opacity]);
-    eq('变旧只重画、不搬（badgeSig 把「旧不旧」记在第 5 格，粘性照旧按字面比 ⇒ 不会虚线一跳就飞一次）',
+    ok('满 30 天 ⇒ 弹窗百分比带来「31 天前读到」（颜色=档位这条不动，字仍是 54%、底色还是那档红）',
+      /54%.*31天前读到/.test(s18e.__xprobe.relBadgeRows('demo_own', null).filter((r) => r[0] === '关注百分比')[0][1]),
+      s18e.__xprobe.relBadgeRows('demo_own', null).filter((r) => r[0] === '关注百分比')[0]);
+    eq('变旧只重画、不搬（badgeSig 把「旧不旧」记进签名，粘性照旧按字面比 ⇒ 不会一跳就飞一次）',
       [p18e.querySelector('[data-xprobe="blk"]') === bd18o, bd18o.style.left,
-        s18e.__xprobe.perfLine().badgeMoved, s18e.__xprobe.perfLine().badgeRatio,
-        s18e.__xprobe.perfLine().badgeRatioOld], [true, '88px', 0, 1, 1]);
+        s18e.__xprobe.perfLine().badgeMoved], [true, '88px', 0]);
     {
       const rtO = s18e.__xprobe.__ratioInfo('demo_own');
-      ok('标签上的字要说清旧到什么程度、且只让用户自己动手（不假装能自动补）',
+      ok('百分比的字要说清旧到什么程度、且只让用户自己动手（不假装能自动补）',
         rtO.stale === true && rtO.ageDays === 31 && /31 天前读到的/.test(rtO.tip)
         && /再悬停一次头像/.test(rtO.tip), [rtO.ageDays, rtO.tip]);
     }
     s18e.__xprobe.getUsers().demo_own.statsAt = Date.now();
     s18e.__xprobe.renderBlocks(true);
-    eq('再悬停一次读到 ⇒ 虚线摘回实线、「旧」清零，位置照旧不动（用户要的「后期按时间增量更新」在这一刻落地）',
-      [bd18o.children[1].style.border, bd18o.style.left, s18e.__xprobe.perfLine().badgeRatioOld],
-      ['1px solid transparent', '88px', 0]);
+    eq('再悬停一次读到 ⇒ 旧数摘回、位置照旧不动（用户要的「后期按时间增量更新」在这一刻落地）',
+      [s18e.__xprobe.__ratioInfo('demo_own').stale, bd18o.style.left, s18e.__xprobe.perfLine().badgeRatioOld],
+      [false, '88px', 0]);
     bd18o.remove();
     delete s18e.__xprobe.getUsers().demo_own;
-    // 最关键的一条：数半路才到（用户刚悬停过 TA 的名片）= 这颗要变宽 = 老落点不是按这个宽度量的
-    // ⇒ 不许粘着原地硬塞（那正压住右边那块字，就是 v0.8.12 立「不许动」之前那个病），得重挑一次。
-    sq18(150);                       // 缝只剩 62px：装得下那颗钮、装不下「钮+标签」
+    // 最关键的一条：数半路才到（用户刚悬停过 TA 的名片）= 弹窗百分比从「—」补成「54%」；行内徽标只表状态、宽度不涨，
+    // 所以「数迟到」不会把徽标撑宽去压右边那块字（v0.8.12 立「不许动」之前那个病），位置照旧。
+    sq18(150);                       // 缝只剩 62px：装得下状态徽标
     s18e.__xprobe.renderBlocks(true);
-    const bd18w = p18e.querySelector('[data-xprobe="blk"]');   // 这一趟还没数 ⇒ 只出钮，落在 88
+    const bd18w = p18e.querySelector('[data-xprobe="blk"]');   // 这一趟还没数 ⇒ 弹窗百分比是「—」
     paint18(bd18w, 46);
+    eq('数还没到 ⇒ 弹窗百分比写「—」、行内徽标单 child 状态、位置不动',
+      [bd18w.children.length, s18e.__xprobe.relBadgeRows('demo_own', null).filter((r) => r[0] === '关注百分比')[0][1], bd18w.style.left],
+      [1, '—', '88px']);
     s18e.__xprobe.getUsers().demo_own = { handle: 'demo_own', following: 418, followers: 771 };
     s18e.__xprobe.renderBlocks(true);
-    eq('数来得正是那条缝装不下「钮+标签」⇒ 这一趟标签不出（不硬塞、不压右边的字），位置也不动，账记「缺数」',
-      [bd18w.style.left, bd18w.children.length, s18e.__xprobe.perfLine().badgeRatio,
-        s18e.__xprobe.perfLine().badgeRatioNo, s18e.__xprobe.perfLine().badgeMoved], ['88px', 1, 0, 1, 0]);
+    eq('数半路到了 ⇒ 同一颗节点原地补出弹窗百分比（不再「—」），行内徽标不撑宽、位置也不动',
+      [p18e.querySelector('[data-xprobe="blk"]') === bd18w, bd18w.children.length, bd18w.style.left,
+        /54%.*418\/771/.test(s18e.__xprobe.relBadgeRows('demo_own', null).filter((r) => r[0] === '关注百分比')[0][1])],
+      [true, 1, '88px', true]);
+    delete s18e.__xprobe.getUsers().demo_own;
     delete s18e.__xprobe.getUsers().demo_own;
     store['ysy.xprobe.badge'] = false;
     // 名单行尾那枚标签不吃这颗总闸：那张面板是探针自己的（fixed 挂 documentElement），不参与 X 的布局
@@ -5640,8 +5758,8 @@ const layersDone = (async function () {
       fb18.style.top, '7px');
     f1.btn.__geo = { left: 400, top: 32, width: 100, height: 32 };  // 钮左移：老位置被它占了
     s18h.__xprobe.renderBlocks(true);
-    eq('老位置真被那颗钮占了 ⇒ 搬一次并改贴新左缘（badgeMoved 记 1，right 跟着重算）',
-      [fb18.style.right, s18h.__xprobe.perfLine().badgeMoved], [(600 - 400 + 4) + 'px', 1]);
+    eq('钮左移侵占老位置 ⇒ 搬一次（badgeMoved 记 1），并重算落点贴进新缝（按钮左移后缝隙重新分配，徽标改贴左缘）',
+      [fb18.style.left, s18h.__xprobe.perfLine().badgeMoved], ['154px', 1]);
     // 行高那把尺：列表页一行天生比「名字行」高，给的是另一把（132）；再高就不是行，别挂
     f1.cell.__geo = { left: 0, top: 0, width: 600, height: 200 };
     s18h.__xprobe.renderBlocks(true);
@@ -5711,21 +5829,20 @@ const layersDone = (async function () {
     ok('总闸排在限流判断之前（关着就不参与「要不要扫」，force 也不例外）',
       /function renderBlocks\(force\) \{[\s\S]{0,120}if \(!badgeGet\(\)\)/.test(core18), '');
     // v0.8.13 比例标签的三层接线：数据从名片来、档位与预算在 core、账在面板、说法在 html
-    // v0.11.4 补一格：关系标签（互关/他单向/我单向）吃同一条预算纪律。
-    // v0.11.9 改口径：关系标签搬进名字行（relChipRow），不再吃徽标那条缝的预算——退让回到两级（比例→钮）。
+    // v0.12.10 改口径：关系标签搬进 badge 盒子（拉黑后面），与百分比同一处；百分比收进悬浮弹卡。
+    //   预算按「实际住进盒子的那颗」算：有 rel 用 relBudget，无 rel 退 ratioBudget。
     const pin18 = (s) => /HC_STAT_HREF_RE\.exec\(href\)/.test(s)
       && /applyHoverStats\(f\.handle, f\.hf, f\.ho, now\)/.test(s)
       && /const RATIO_GREEN = 95;/.test(s) && /const RATIO_YELLOW = 85;/.test(s)
-      && /rt = null; need = needOf\(null\);/.test(s)
-      && /const needOf = \(x\) => BADGE_FULL_W \+ \(x \? BADGE_GAP_PX \+ ratioBudget\(x\) : 0\);/.test(s)
-      && /relChipRow\(nameEl, h, rel0\)/.test(s)
+      && /const needOf = \(x\) => BADGE_GAP_PX \+ \(x \? relBudget\(x\) : STATUS_PH_W\);/.test(s)
+      && /badgePaint\(n, h, nameTxt, bad, place\.form, wantRt, wantRel\)/.test(s)
       && /badgePick\(anchor, refEl, need\)/.test(s);
-    ok('三层接线齐：名片按 href 收那两个数并落台账 + 档位常量 + 「挤不下就先保钮」写在代码里（比例一级退让）+ 落点预算真的传进 badgePick + 关系标签改住名字行',
-      pin18(core18), core18.slice(core18.indexOf('const needOf'), core18.indexOf('const needOf') + 200));
+    ok('三层接线齐：名片按 href 收那两个数并落台账 + 档位常量 + 「挤不下就先保钮」写在代码里（比例/关系各一级退让）+ 落点预算真的传进 badgePick + 关系标签搬进 badge 盒子',
+      pin18(core18), core18.slice(core18.indexOf('const needOf'), core18.indexOf('const needOf') + 240));
     ok('正向对照：把 need 从 badgePick 那两枪里全抠掉（= 标签宽度不进落点预算，挂好再塞就会压住右边的字）⇒ 判据当场变红',
       !pin18(core18.replace(/badgePick\(anchor, refEl, need\)/g, 'badgePick(anchor, refEl)')), '');
-    ok('正向对照：把 relChipRow 的画笔抠掉（关系标签不画进名字行）⇒ 判据当场变红（这条针脚咬住「标签在名字行」这个位置）',
-      !pin18(core18.replace(/relChipRow\(nameEl, h, rel0\)/g, 'null')), '');
+    ok('正向对照：把 badgePaint 传 rel 的画笔抠掉（关系标签不画进 badge 盒子）⇒ 判据当场变红（这条针脚咬住「标签和拉黑放一块」这个位置）',
+      !pin18(core18.replace(/badgePaint\(n, h, nameTxt, bad, place\.form, wantRt, wantRel\)/g, 'badgePaint(n, h, nameTxt, bad, place.form, wantRt, null)')), '');
     ok('面板那行有「标签/缺数/旧」三个数、html 讲清了「没数就一颗都不编」（RL-11：抓不到不许静默，也别说得好像一定有）',
       /标签' \+ \(p\.badgeRatio \|\| 0\) \+ '\/缺数' \+ \(p\.badgeRatioNo \|\| 0\) \+ '\/旧' \+ \(p\.badgeRatioOld \|\| 0\)/.test(rd('ui/view.js'))
       && /没数就一个都不编/.test(html18) && /__ratioInfo: ratioInfo/.test(core18), '');
@@ -5884,10 +6001,10 @@ const layersDone = (async function () {
     X.fabBtn();
     const bb19 = IDS['ysy-xprobe-ext-bbtn'];
     eq('handle 大小写归一（从 @Bob 点进来也只有一份账），钮上的字面带台账人数',
-      [Object.keys(bm()).join(','), X.benchCount(), X.benchFabText(), bb19.textContent], ['alice,bob,carl', 3, '杆3', '杆3']);
+      [Object.keys(bm()).join(','), X.benchCount(), X.benchFabText(), bb19.textContent], ['alice,bob,carl', 3, '◎3', '◎3']);
     eq('第五颗也是等大圆角方钮（方案 A）：宽高圆角按直径、padding 归零、人数在角标上',
       [bb19.style.width, bb19.style.height, bb19.style.borderRadius, bb19.style.padding],
-      ['34px', '34px', '6px', '0']);
+      ['34px', '34px', '9px', '0']);
     eq('字面没变就不动 DOM（与「回」/灯同一条纪律）：再跑一趟 fabBtn 不重写这颗',
       (() => { const before = bb19.style.font; X.fabBtn(); return bb19.style.font === before; })(), true);
     eq('窗口底距与名单同档（都顶在钮排之上：334 基准 + 窗口那两颗各一格 40×2）', [X.benchBottomPx(), X.flistBottomPx()], [414, 414]);
@@ -6691,8 +6808,8 @@ const layersDone = (async function () {
     ok('台账→库的落点在 _simple 的 kind=benchpost 分支（id 只认数字、正文纯截断 200，与库里 _txt 同一字面）',
       /kind == "benchpost"/.test(db21) && /re\.sub\(r"\\D", "", str\(d\.get\("id"\) or ""\)\)\[:25\]/.test(db21)
       && /_txt\(d\.get\("text"\), 200\)/.test(db21), '');
-    ok('sink 认这条记录（v0.9.3 起认 kind=benchpost；v0.9.7 抬到 sink-18：/db 多认 after 游标，标杆同步走这条腿）',
-      /SINK_VER = "sink-18"/.test(sink21) && /kind == "benchpost"/.test(sink21) && /标为标杆帖/.test(sink21), '');
+    ok('sink 认这条记录（v0.9.3 起认 kind=benchpost；v0.9.7 抬到 sink-18 认 after 游标；v0.12.15 抬到 sink-19：/api/xprobe/* 同形读口）',
+      /SINK_VER = "sink-19"/.test(sink21) && /kind == "benchpost"/.test(sink21) && /标为标杆帖/.test(sink21), '');
     ok('SW 不用为新查询加参数（q+limit 原样透传），core 里没有 SQL 字样、只认白名单查询名',
       /bench_post_rows/.test(core21) && !/SELECT /.test(core21) && /127\.0\.0\.1:8765\/db/.test(sw21), '');
     ok('面板「性能账」多一格「页头星」，没出时把原因一起写出来（与「主页星」同款式）',
@@ -6729,8 +6846,8 @@ const layersDone = (async function () {
     const sb22 = run(t22a, '/demo_own', 'https://x.com/demo_own');
     store['ysy.xprobe.blocked'] = { demo_own: { at: '2026-10-27T09:21:48.407Z', n: '示例笔记' } };
     sb22.__xprobe.renderBlocks(true);
-    eq('晚水合后页面徽标回显红「已拉黑」（起跑时读空账不算数，判账要读穿）',
-      t22a.querySelectorAll('[data-xprobe="blk"]')[0].children[0].textContent, '已拉黑');
+    eq('晚水合后页面徽标回显红「已拉黑」（起跑时读空账不算数，判账要读穿；徽标描红、不写字面）',
+      /rgba/.test(t22a.querySelectorAll('[data-xprobe="blk"]')[0].style.background), true);
 
     // ② 同一套读穿判账搬到名单：v0.11.3 把行尾两颗拿掉了 ⇒ 回显改住在「显示名转红 + 悬停 title 点名」这一行上，
     //    标杆那本的回显在右缘「标杆」窗口那一侧（同一个 isBench，也走读穿）。
@@ -6756,11 +6873,14 @@ const layersDone = (async function () {
     const sb22m = run(t22m, '/home', 'https://x.com/home');
     store['ysy.xprobe.blocked'] = { elder_a: { at: '2026-10-26T00:00:00.000Z', n: '老账' } };   // 别的会话落好的账
     sb22m.__xprobe.renderBlocks(true);
-    eq('并账前先各自回显：elder_a「已拉黑」、new_b「拉黑」（同一页两条账各认各的）',
-      [t22m.querySelectorAll('[data-xprobe="blk"]').find((n) => n.getAttribute('data-h') === 'elder_a').children[0].textContent,
-        t22m.querySelectorAll('[data-xprobe="blk"]').find((n) => n.getAttribute('data-h') === 'new_b').children[0].textContent],
-      ['已拉黑', '拉黑']);
-    t22m.querySelectorAll('[data-xprobe="blk"]').find((n) => n.getAttribute('data-h') === 'new_b').children[0].fire('click');
+    const blkElder = t22m.querySelectorAll('[data-xprobe="blk"]').find((n) => n.getAttribute('data-h') === 'elder_a');
+    const blkNew = t22m.querySelectorAll('[data-xprobe="blk"]').find((n) => n.getAttribute('data-h') === 'new_b');
+    eq('并账前先各自回显：elder_a 徽标描红「已拉黑」、new_b 不描红「拉黑」（同一页两条账各认各的）',
+      [/rgba/.test(blkElder.style.background), /rgba/.test(blkNew.style.background)], [true, false]);
+    // v0.12.12：拉黑入口在悬浮弹窗里（行内不写「拉黑」字样），点拉黑走弹窗
+    sb22m.__xprobe.relBadgePopShow(blkNew, 'new_b', null);
+    const nb22pop = sb22m.document.getElementById('ysy-xprobe-ext-relpop');
+    nb22pop.querySelector('button').fire('click');
     eq('拉黑第一个人不抹别的会话标的账（整键覆盖前先并一次）：elder_a 与 new_b 都在名单里',
       Object.keys(led22()).sort(), ['elder_a', 'new_b']);
 
@@ -6795,8 +6915,8 @@ const layersDone = (async function () {
     ), t22x, '/demo_own', 'https://x.com/demo_own');
     store['ysy.xprobe.blocked'] = { demo_own: { at: '2026-10-27T09:21:48.407Z', n: '示例笔记' } };
     m22.__xprobe.renderBlocks(true);
-    eq('正向对照：判账抠回「只摸内存」⇒ 徽标退回灰「拉黑」（晚水合的缝重新裂开）',
-      t22x.querySelectorAll('[data-xprobe="blk"]')[0].children[0].textContent, '拉黑');
+    eq('正向对照：判账抠回「只摸内存」⇒ 徽标退回灰（无 rgba 描红，晚水合的缝重新裂开）',
+      /rgba/.test(t22x.querySelectorAll('[data-xprobe="blk"]')[0].style.background), false);
 
     delete store['ysy.xprobe.blocked'];
     delete store['ysy.xprobe.bench'];
@@ -6822,16 +6942,16 @@ const layersDone = (async function () {
     const bar23 = IDS['ysy-xprobe-ext-bar'];
     const fb23 = (id) => IDS[id];
 
-    eq('右缘轨：玻璃底 + backdropFilter blur + 8px 细轨圆角（方案 A；令牌 UI_TOK 的三样都在）',
-      [/rgba\(15,20,27/.test(bar23.style.background), bar23.style.backdropFilter, bar23.style.borderRadius],
-      [true, 'blur(14px) saturate(1.2)', '8px']);
+    eq('右缘轨：透明黑托盘 + backdropFilter blur + 12px 圆角（v0.12.9 grok 同款，钮各自黑底白图）',
+      [/rgba\(0,0,0,\.45\)/.test(bar23.style.background), bar23.style.backdropFilter, bar23.style.borderRadius],
+      [true, 'blur(14px) saturate(1.2)', '12px']);
     eq('柱顶一颗探针呼吸点（class ysy-dot，6px 圆，动画在柱内嵌 style 里——纯样式，不派事件）',
       [bar23.children[1].getAttribute('class'), bar23.children[1].style.width,
         /ysyFabPulse/.test(bar23.children[0].textContent)], ['ysy-dot', '6px', true]);
     eq('方案 A：钮面单字横排、全称住 data-tip（标杆钮 textContent=「杆」、无竖排、data-tip=「标杆账号」）',
       (() => { const b = fb23('ysy-xprobe-ext-bbtn'); return [b.children[0].style.writingMode || '',
         b.children[0].style.textOrientation || '', b.textContent, b.getAttribute('data-tip')]; })(),
-      ['', '', '杆', '标杆账号']);
+      ['', '', '◎', '标杆账号']);
     eq('七颗一律单字横排：关/榜/观与杆/帖/稿的 label span 都没有 writingMode',
       ['ysy-xprobe-ext-fbtn', 'ysy-xprobe-ext-cbtn', 'ysy-xprobe-ext-fab',
         'ysy-xprobe-ext-bbtn', 'ysy-xprobe-ext-bpbtn', 'ysy-xprobe-ext-aibtn']
@@ -6847,12 +6967,12 @@ const layersDone = (async function () {
     X23.fabBtn();
     eq('角标：标杆 1 人 ⇒ 钮右上角多一枚小数字 3？不——1 人就是 1（数字与台账同源），字色琥珀、字面拼出「杆1」',
       (() => { const b = fb23('ysy-xprobe-ext-bbtn'); return [b.textContent, b.children[1].textContent, b.children[1].style.color]; })(),
-      ['杆1', '1', '#e0a34c']);
+      ['◎1', '1', '#e0a34c']);
     X23.benchToggle('Bob', '乙');
     X23.fabBtn();
     eq('人数归零 ⇒ 角标整枚摘掉（不是写 0 冒充没数，RL-11 的钮面版），钮面只剩「杆」',
       (() => { const b = fb23('ysy-xprobe-ext-bbtn'); return [b.textContent, b.children.length]; })(),
-      ['杆', 1]);
+      ['◎', 1]);
     X23.flistOpen = false; X23.benchOpen = false; X23.benchPOpen = false; X23.cardOpen = false;
     X23.fabBtn();
     eq('没有面板开着 ⇒ 五颗开关全是安静的灰（inkDim），一个都不亮',
@@ -6883,7 +7003,7 @@ const layersDone = (async function () {
     sb23.__runTimers(2);
     X23.fabBtn();
     eq('过 60 秒翻回绿「观」 ⇒ 环藏起来（display none，节点留着复用——反复插拔才是新的抖动）',
-      [lamp23.textContent, ring23.style.display, lamp23.children.length], ['观', 'none', 2]);
+      [lamp23.textContent, ring23.style.display, lamp23.children.length], ['◉', 'none', 2]);
 
     // 面板标题走 serif 档 + 曝光榜数据条：构造判据钉在源码上（夹具搭一整套带指标的榜太重，
     // 这两处的行为面——标题字面/行结构/点击账——已各有旧针脚钉着）
@@ -6953,7 +7073,7 @@ const layersDone = (async function () {
     const w24b = runSW({ store: CLOUD24, native: dbNative24, text: ok24(5, 8) });
     const rRun = await w24b.__call({ t: 'xsyncRun' }, 4000);
     eq('出机器的地址钉死自家 Java 库的 push 端点；token 在请求头、体里一个都不带',
-      [rRun.ok, /^https:\/\/api2\.mingzhang\.cc\/api\/xprobe\/bench\/push$/.test(w24b.__lastUrl),
+      [rRun.ok, /^https:\/\/zhishu\.mingzhang\.cc\/api\/xprobe\/bench\/push$/.test(w24b.__lastUrl),
         w24b.__lastInit.headers.token, JSON.stringify(w24b.__lastInit.body).indexOf(TOK24) < 0],
       [true, true, TOK24, true]);
     const sent24 = JSON.parse(w24b.__lastInit.body);
@@ -7140,7 +7260,7 @@ const layersDone = (async function () {
   // 403 且回包不是 JSON 一律说成被跨域挡了并且绝不标 needLogin。
   console.log('\n[26] v0.10.0 云端接口两档：地址只有两档 / 登录态与水位按档隔离 / 403 说是被 CORS 挡了');
   {
-    const PROD = 'https://api2.mingzhang.cc', DEV = 'http://127.0.0.1:28081';
+    const PROD = 'https://zhishu.mingzhang.cc', DEV = 'http://localhost:3100';
     const OKJSON = '{"code":200,"message":"ok","data":"a@b.co"}';
     const wEnv0 = runSW({});
     const st0 = await wEnv0.__send({ t: 'cloudState' });
@@ -7153,7 +7273,7 @@ const layersDone = (async function () {
       [eDev.ok, eDev.env, eDev.base, wEnv0.__map['ysy.xprobe.cloudEnv']], [true, 'dev', DEV, 'dev']);
     const wDevCode = runSW({ store: { 'ysy.xprobe.cloudEnv': 'dev' }, text: OKJSON });
     const cDev = await wDevCode.__send({ t: 'cloudSendCode', email: 'a@b.co' });
-    eq('dev 档的发验证码打到 127.0.0.1:28081（换的是地址，路径一个没动）', [cDev.ok, wDevCode.__lastUrl], [true, DEV + '/api/mz/user/sendEmail']);
+    eq('dev 档的发验证码打到 localhost:3100（换的是地址，路径一个没动）', [cDev.ok, wDevCode.__lastUrl], [true, DEV + '/api/mz/user/sendEmail']);
     const eBad = await wEnv0.__send({ t: 'cloudEnvSet', env: 'https://evil.example.com' });
     eq('第三个地址填不进来：只认那两个 key，就地拒，存储里仍是原来那档',
       [eBad.ok, /两档/.test(eBad.err || ''), wEnv0.__map['ysy.xprobe.cloudEnv']], [false, true, 'dev']);
@@ -7207,7 +7327,7 @@ const layersDone = (async function () {
     const cCorsDev = await runSW({ store: { 'ysy.xprobe.cloudEnv': 'dev' }, status: 403, text: 'Invalid CORS request' })
       .__send({ t: 'cloudSendCode', email: 'a@b.co' });
     ok('同一句话把「这一跳打的是哪档地址」报出来（dev 的 403 别让人去查线上）',
-      cCorsDev.ok === false && /127\.0\.0\.1:28081/.test(cCorsDev.err || ''), cCorsDev);
+      cCorsDev.ok === false && /localhost:3100/.test(cCorsDev.err || ''), cCorsDev);
     const cHtml = await runSW({ status: 404, text: '<!DOCTYPE html>404' }).__send({ t: 'cloudSendCode', email: 'a@b.co' });
     ok('非 403 的非 JSON 仍说「打到的不是接口」：v0.9.9 为 HTML 404 写的那句没被 CORS 这条改丢',
       !/跨域/.test(cHtml.err || '') && /不是接口/.test(cHtml.err || ''), cHtml);
@@ -7297,18 +7417,22 @@ const layersDone = (async function () {
         sp27.replace(/(bClear: \(\) => \{[\s\S]{0,160}?)if \(clearArm && Date\.now\(\) - clearArm < ARM_MS\)/, '$1if (false && clearArm < 0)')), '');
 
     // D-4：反馈落点不能被重画抹掉 —— v0.9.8 只修了设置页，诊断页「查表」还是往 #report 里 prepend
-    ok('UIX-18 查表结果改存模块变量、由 render() 在诊断视图里重放；#report 里不再 prepend（那条 900ms 清空的嘴）',
-      /let qKeep = null;/.test(sp27) && /qKeep = \[head\]\.concat\(body\)/.test(sp27) &&
-      /if \(qKeep\) appendSafe\(root, qKeep\)/.test(sp27) && !/prepend\(tick\(m\)\)/.test(sp27), '');
-    ok('查表失败也有一句话（以前 ok:false 只剩一颗空表格 = 「点了没反应」）；离开诊断视图就丢掉旧查询，别在别的页顶出一段',
-      /查表没成：/.test(sp27) && /if \(view !== 'debug'\) qKeep = null;/.test(sp27), '');
+    //（v0.12.13 诊断整页搬进工作台 dashboard.js，同一套机制在那边继续被咬住）
+    ok('UIX-18 查表结果存公共壳 qKeep、由 render() 重放；拆页后 page-debug.js 经 api.getQKeep/setQKeep 取放，不往 #report prepend',
+      /let qKeep = null;/.test(dSrc) && /api\.setQKeep\(\[head\]\.concat\(body\)\)/.test(dSrc) &&
+      /api\.getQKeep\(\)/.test(dSrc) && !/prepend\(tick\(m\)\)/.test(dSrc), '');
+    ok('查表失败也有一句话；拆页后切页天然隔离（本页 <a href> 重新加载文档，qKeep 不跨页、不会顶到别的页）',
+      /查表没成：/.test(dSrc) && /a\.href = t\.file;/.test(dSrc) &&
+      /window\.addEventListener\('load', boot/.test(dSrc), '');
     ok('UIX-12/13 两格「应用」补上成功落点：随机加时与今日目标都写「最近动作」（成功以前一个字不写，只剩 900ms 后悄悄覆写回输入框）',
       /function doRndSet\(\)[\s\S]{0,700}noteSet\(r\.ok \? \('关注加时上限已设为/.test(sp27) &&
       /function doGoalSet\(\)[\s\S]{0,900}noteSet\(r\.ok \? \('今日目标已记下/.test(sp27), '');
 
     // D-10/D-12：一套皮肤三条关法（作者框以前只有 × 与遮罩，Esc 是空话）+ 焦点归还 + 一条焦点样式都没有
-    ok("UIX-19 两种弹窗的 Esc 各归各的状态：setModal 看 modalKind、广场作者框看 tlUser（RL-20 ③ 那句「三条关法齐」从此对两张弹窗都成立）",
-      /if \(modalKind\) closeModal\(\);\s*else if \(tlUser\) closeTlUser\(\);/.test(sp27), '');
+    ok("UIX-19 三种弹窗的 Esc 各归各的状态：面板 setModal 看 modalKind；工作台（v0.12.15）Esc 先看云端登录弹窗再看作者模态（RL-20 ③ 三条关法齐都成立）",
+      /if \(modalKind\) closeModal\(\);/.test(sp27) &&
+      /if \(login\) \{ closeLogin\(\); return; \}/.test(dSrc) &&
+      /if \(K\.tlUserActive\(\)\) K\.closeTlUser\(\);/.test(dSrc), '');
     ok('UIX-27 关弹窗把焦点还给开它的那颗钮（Tab 一圈回得到起点）；弹窗壳在 html 里就带 role="dialog" 与 aria-modal',
       /modalPrev = document\.activeElement;/.test(sp27) && /if \(modalPrev && modalPrev\.focus\)/.test(sp27) &&
       /role="dialog"/.test(html27) && /aria-modal="true"/.test(html27) && /aria-labelledby="setModalTitle"/.test(html27), '');
@@ -7407,7 +7531,7 @@ const layersDone = (async function () {
   // boot4 那一处只改了源码：本机没有 Maven，没编译没启动 ⇒ 「403/401 修好了」这句话本轮仍说不出口。
   console.log('\n[29] v0.10.3 登录首趟两条腿都推 / 服务端 401 不再被转述成「请登录」 / 首趟跟着档位走不串账');
   {
-    const PROD29 = 'https://api2.mingzhang.cc', DEV29 = 'http://127.0.0.1:28081';
+    const PROD29 = 'https://zhishu.mingzhang.cc', DEV29 = 'http://localhost:3100';
     const sp29 = rd('ui/sidepanel.js').replace(/^\s*\/\/.*$/gm, '');
     const sw29 = rd('background/sw.js');
     const html29 = rd('ui/sidepanel.html');
@@ -7470,7 +7594,7 @@ const layersDone = (async function () {
         'ysy.xprobe.series': SERIES29, 'ysy.xprobe.guard': GUARD29 },
     });
     const lgDev29 = await wDev29.__call({ t: 'cloudLogin', email: 'd@b.co', code: '1234' }, 4000);
-    eq('dev 档登录：首趟三跳全在 127.0.0.1:28081（线上那把 JWT 结构上发不到 localhost），水位只抬 .dev、.prod 一个字不动',
+    eq('dev 档登录：首趟三跳全在 localhost:3100（线上那把 JWT 结构上发不到 localhost），水位只抬 .dev、.prod 一个字不动',
       [lgDev29.ok, wDev29.__fetchUrls().every((x) => new RegExp('^' + DEV29.replace(/\./g, '\\.') + '/').test(x)),
         wDev29.__fetchUrls().length, wDev29.__map['ysy.xprobe.xsyncWM.dev.u9'], wDev29.__map['ysy.xprobe.xsyncWM.prod.u9'],
         (wDev29.__map['ysy.xprobe.cloud'].acct || {}).prod.token],
@@ -7521,7 +7645,7 @@ const layersDone = (async function () {
         byUrl: (u) => ({ text: /ingest/.test(u) ? JSON.stringify({ code: 401, message: '请登录', data: null }) : '{"code":200}' }),
       });
       const r401d = await w401d.__call({ t: 'cloudSyncNow' }, 4000);
-      ok('dev 档被拒 ⇒ 念的是 127.0.0.1:28081，不许拿线上那台冒充（切档之后「去哪儿修」也跟着换）',
+      ok('dev 档被拒 ⇒ 念的是 localhost:3100，不许拿线上那台冒充（切档之后「去哪儿修」也跟着换）',
         r401d.err.indexOf(DEV29) >= 0 && r401d.err.indexOf(PROD29) < 0, r401d.err);
       // 变异对照：把 base 那段拼接抠掉 ⇒ 上面那条「念出是哪一台」当场红（证明咬的是这句拼接，不是源码里恰好有 api2 这个词）
       const swCut401 = sw29.replace("+ base + ' 不认这把 token", "+ ' 不认这把 token");
@@ -7584,8 +7708,8 @@ const layersDone = (async function () {
       // sw.js 那段注释里留着旧文案（写清上一版为什么说错），所以判的是「真跑的那一份字面」——与 sp29 去注释同一口径
       !/先重新登录一次/.test(sw29.replace(/^\s*\/\/.*$/gm, '')), '');
     ok('这一轮没有多开一个出口、也没有多要一条权限：登录首趟走的就是原来那两条路（host_permissions 仍是回环三条 + 云域名一条，<all_urls> 仍不在）',
-      /"https:\/\/api2\.mingzhang\.cc\/\*"/.test(rd('manifest.json')) &&
-      /"http:\/\/127\.0\.0\.1:28081\/\*"/.test(rd('manifest.json')) && !/<all_urls>/.test(rd('manifest.json')), '');
+      /"https:\/\/zhishu\.mingzhang\.cc\/\*"/.test(rd('manifest.json')) &&
+      /"http:\/\/localhost:3100\/\*"/.test(rd('manifest.json')) && !/<all_urls>/.test(rd('manifest.json')), '');
     ok('D-1 的账这一轮也没飘：新写的这些字面里没有「…并…」式动作名（正向对照见 [27]）',
       !/(?:登录|切换|保存|同步|发送)并(?:切|登|换|到|去)/.test(sp29) &&
       !/(?:登录|切换|保存|同步|发送)并(?:切|登|换|到|去)/.test(sw29), '');
@@ -7759,12 +7883,12 @@ const layersDone = (async function () {
       });
       const rQ31 = await wQ31.__call({ t: 'benchQuery', kind: 'ac', size: 500 }, 4000);
       const reqQ31 = wQ31.__fetchReqs().filter((x) => /bench\/list/.test(x.url));
-      eq('读名单：POST https://api2.mingzhang.cc/api/xprobe/bench/list，身份只在 token 头、体里只有 kind/size，row 按顶层 rows 摊平；' +
+      eq('读名单：POST https://zhishu.mingzhang.cc/api/xprobe/bench/list，身份只在 token 头、体里只有 kind/size，row 按顶层 rows 摊平；' +
         '出机器的 kind 是服务端认的全名（面板内部叫 ac，发 ' + "'ac' 会被「不认就当 account」静默降级）",
         [rQ31.ok, rQ31.rows, rQ31.total, reqQ31.length, reqQ31[0] && reqQ31[0].url,
           reqQ31[0] && reqQ31[0].init.headers.token, reqQ31[0] && JSON.parse(reqQ31[0].init.body),
           reqQ31[0] && String(reqQ31[0].init.body).indexOf('tok-bq') < 0],
-        [true, LIST31, 2, 1, 'https://api2.mingzhang.cc/api/xprobe/bench/list', 'tok-bq', { kind: 'account', size: 500 }, true]);
+        [true, LIST31, 2, 1, 'https://zhishu.mingzhang.cc/api/xprobe/bench/list', 'tok-bq', { kind: 'account', size: 500 }, true]);
       // ④ 真跑：抽屉里「TA 的帖子」= POST /api/xprobe/library/posts（带 author，不再读本机库）
       const wQP31 = runSW({
         store: { 'ysy.xprobe.cloud': { on: true, env: 'prod', acct: { prod: { token: 'tok-bq', email: 'q@b.co', userId: 'u1' } } } },
@@ -7789,7 +7913,7 @@ const layersDone = (async function () {
         [rM31.ok, reqM31.length, reqM31[0] && reqM31[0].url, reqM31[0] && reqM31[0].init.headers.token,
           bodyM31.kind, bodyM31.state, bodyM31.deviceId, bodyM31.bizKey, bodyM31.fans, bodyM31.fow, bodyM31.postsN, bodyM31.eng,
           'fow' in bodyM31, 'postsN' in bodyM31],
-        [true, 1, 'https://api2.mingzhang.cc/api/xprobe/bench/mark', 'tok-bm', 'account', 0, 'dev-00001', 'demo_a', 10, null, null, 0, false, false]);
+        [true, 1, 'https://zhishu.mingzhang.cc/api/xprobe/bench/mark', 'tok-bm', 'account', 0, 'dev-00001', 'demo_a', 10, null, null, 0, false, false]);
       // ⑥ 真跑：标帖走同一格（kind=po），正文与发帖时刻都在体里
       const wMP31 = runSW({
         store: { 'ysy.xprobe.deviceId': 'dev-00001',
@@ -8137,15 +8261,52 @@ const layersDone = (async function () {
       eq('四行各一颗徽标；标签档位 = 互关/他单向/我单向/（只有半条证据的那行）一颗都没有',
         [Object.keys(bd34).length, lab34(bd34.both), lab34(bd34.tb1), lab34(bd34.libonly), lab34(bd34.witness)],
         [4, '互关', '他单向', '我单向', null]);
-      eq('v0.12.2 位置（100% 复刻「不是兄弟」的 host+position）：标签是名字锚**后面的兄弟**（绝不长进锚里面——'
-        + '详情页那颗锚是纵排 flex 的整块身份区，塞进去就被 stretch 成拉满暗条，v0.11.10 拉长条的根因），'
-        + '紧跟名字、在时间那格前面；颜色按档位分、「我单向」是虚线框，且标签的字不混进台账名（data-n）',
-        [chipOf(bd34.tb1).previousElementSibling.getAttribute('href'),
-          chipOf(bd34.tb1).parentNode.getAttribute('data-testid'),
-          (chipOf(bd34.tb1).nextElementSibling.textContent || '').indexOf('1小时') >= 0,
+      eq('v0.12.10 位置（用户点名）：标签搬进 badge 盒子、紧跟「拉黑」钮之后（与百分比同一处），'
+        + '不再是昵称下方的独立节点；颜色按档位分、「我单向」是虚线框，标签的字不混进台账名（data-n）',
+        [chipOf(bd34.tb1).parentNode.getAttribute('data-xprobe'),
+          chipOf(bd34.tb1).previousElementSibling === btnOf(bd34.tb1),
+          chipOf(bd34.tb1).getAttribute('data-role'),
           chipOf(bd34.tb1).style.color, chipOf(bd34.libonly).style.border, chipOf(bd34.both).style.border,
           (bd34.tb1.getAttribute('data-n') || '').indexOf('互关') < 0],
-        ['/tb1', 'User-Name', true, '#13231b', '1px dashed color-mix(in srgb, #f1b84b 55%, #13231b)', '1px solid color-mix(in srgb, #a8e89a 55%, #13231b)', true]);
+        ['blk', true, 'rel', '#13231b', '1px dashed color-mix(in srgb, #f1b84b 55%, #13231b)', '1px solid color-mix(in srgb, #a8e89a 55%, #13231b)', true]);
+      // ---- v0.12.5：100% 抄「不是兄弟」content-script.css 的浅/深两套配色 ----
+      eq('浅色档（默认）：三档都有实底 —— v0.11.13 起 relChipStyle 读 rel.bg，而 relVerdict 从不带这一格，'
+        + 'undefined 写进 style.background 被浏览器丢掉 ⇒ 深色页面上只剩深墨绿字 + 深绿边 = 用户看到的「黑胶囊」',
+        [chipOf(bd34.both).style.background, chipOf(bd34.both).style.color,
+         chipOf(bd34.tb1).style.background, chipOf(bd34.libonly).style.background,
+         chipOf(bd34.both).getAttribute('data-t'), chipOf(bd34.both).getAttribute('aria-label')],
+        ['#dff7d9', '#13231b', '#dff2ff', '#fff0c9', 'light', '@both：互关']);
+      const chipBefore34 = chipOf(bd34.both);
+      s34.document.documentElement.setAttribute('data-xro-theme', 'dark');
+      s34.__xprobe.relThemeSync();
+      s34.__xprobe.renderBlocks(true);
+      eq('深色档：跟随参考插件写在 :root[data-xro-theme] 的那一位，三档换深底亮字，与 .xro-badge--* 的 dark 规则一字不差；'
+        + '边框 tone 不变（参考插件 dark 只覆盖 background/color）',
+        [s34.__xprobe.__relTheme(), chipOf(bd34.both).style.background, chipOf(bd34.both).style.color,
+         chipOf(bd34.tb1).style.background, chipOf(bd34.tb1).style.color,
+         chipOf(bd34.libonly).style.background, chipOf(bd34.libonly).style.color,
+         chipOf(bd34.both).style.border,
+         chipOf(bd34.both).getAttribute('data-t'), chipOf(bd34.both).getAttribute('data-k')],
+        ['dark', '#183b25', '#b8efa9', '#173747', '#a8dcf8', '#493817', '#ffd77b',
+         '1px solid color-mix(in srgb, #a8e89a 55%, #13231b)', 'dark', 'mutual+']);
+      ok('主题翻面只改样式：配色按深色档重刷、data-k 档位语义不变、标签仍是纯展示件不惊动布局'
+        + '（v0.12.10 关系标签住 badge 盒子，盒子随徽标重画，标签本体仍 flex:none/pointer-events:none）',
+        chipOf(bd34.both).style.background === '#183b25' && chipOf(bd34.both).getAttribute('data-k') === 'mutual+'
+        && !chipOf(bd34.both).listeners.click
+        && chipOf(bd34.both).style.flex === 'none' && chipOf(bd34.both).style.pointerEvents === 'none',
+        chipOf(bd34.both).style);
+      s34.document.documentElement.setAttribute('data-xro-theme', 'light');
+      s34.__xprobe.relThemeSync();
+      s34.__xprobe.renderBlocks(true);
+      eq('反向对照：主题翻回浅色 ⇒ 配色跟着翻回，不留在深色；档位不变',
+        [s34.__xprobe.__relTheme(), chipOf(bd34.both).style.background, chipOf(bd34.both).style.color,
+         chipOf(bd34.both).getAttribute('data-t'), chipOf(bd34.both).getAttribute('data-k')],
+        ['light', '#dff7d9', '#13231b', 'light', 'mutual+']);
+      ok('主题检测逐条对译参考插件 rr()/Vo()：先跟随 :root 的主题戳，再量 body/documentElement 背景亮度'
+        + '（299R+587G+114B）/1000 < 128 ⇒ dark，再退 prefers-color-scheme；change 事件有监听',
+        /getAttribute\('data-xro-theme'\)/.test(src) && /lum < 128/.test(src)
+        && /prefers-color-scheme: dark/.test(src) && /addEventListener\('change'/.test(src)
+        && /relThemeSync\(\);/.test(src), '');
       ok('v0.12.2 防抖筋骨照参考插件 .xro-badge 抄齐：flex:none（不挤人也不被人挤）、pointer-events:none'
         + '（指针穿透，光标/悬停全按没有这颗算——「鼠标一过头标就乱」的断根）、纯展示件一个事件都没挂',
         chipOf(bd34.tb1).style.flex === 'none' && chipOf(bd34.tb1).style.pointerEvents === 'none'
@@ -8169,10 +8330,10 @@ const layersDone = (async function () {
           return [r1.host.getAttribute('href'), r1.pos, r2 === null, r2b.host === box2b, r2b.pos,
             r3.host === box3.children[1], X.relAtSpot(fake, spot.host, 'afterend')];
         })(), ['/aa', 'afterend', true, true, 'beforeend', true, false]);
-      eq('徽标里只剩那颗钮了（这四行没有比例数；关系标签那一格从盒子里搬走了）',
+      eq('v0.12.12 徽标只承载关系状态（一枚关系标签，拉黑钮已迁到悬浮弹窗，行内无 button）',
         [bd34.tb1.children.map((c) => String(c.tagName || '').toLowerCase()).join(','),
           bd34.tb1.children.some((c) => String(c.getAttribute('class') || '').indexOf(RC34) >= 0)],
-        ['button', false]);
+        ['span', true]);
       ok('tooltip 把证据出处写全（这行的钮 / 本机台账 + 日期），点开就知道凭什么：'
         + '「他单向」认 aria「回关」，「我单向」明写虚线是推断',
         /这一行那颗关系钮写着「回关 @tb1」/.test(chipOf(bd34.tb1).title)
@@ -8183,8 +8344,10 @@ const layersDone = (async function () {
       ok('标签是纯展示件：一个事件都没挂（点它等于点它底下那一行），也不拦事件 —— RL-1「只读、不代操作」',
         !chipOf(bd34.tb1).listeners.click && !chipOf(bd34.tb1).listeners.mousedown
         && chipOf(bd34.tb1).fire('click') === undefined, chipOf(bd34.tb1).listeners);
-      eq('这一趟的账：三颗出、一颗判得出来却没地方画 = 0（四行都画得下），面板那行才答得出「23 行里出了几颗」',
-        [s34.__xprobe.perfLine().badgeRel, s34.__xprobe.perfLine().badgeRelNo], [3, 0]);
+      // v0.12.12：badgeRel = 画出关系标签的颗数；badgeRelNo = 画成空白占位（关系判不出）的颗数。
+      // 四行里 both/tb1/libonly 判得出关系（3 颗），witness 只有半条证据判不出 ⇒ 空白占位（1 颗）。
+      eq('这一趟的账：三颗画出关系标签、一颗关系判不出给空白占位（面板那行才答得出「23 行里出了几颗」）',
+        [s34.__xprobe.perfLine().badgeRel, s34.__xprobe.perfLine().badgeRelNo], [3, 1]);
       // 粘住：老位置仍然空着 ⇒ 一个字都不写（含那颗标签）；标签档位一翻（补上一条粉丝证据）签名第 6 格变 ⇒ 重画
       const p34 = (n) => {
         const hp = n.parentNode.__geo || { left: 0, top: 0, width: 0, height: 18 };
@@ -8196,12 +8359,12 @@ const layersDone = (async function () {
       Object.keys(bd34).forEach((k) => p34(bd34[k]));
       const mv34 = s34.__xprobe.perfLine().badgeMoved;
       s34.__xprobe.renderBlocks(true);
-      eq('正向对照（粘住）：给老位置补上矩形再跑一趟 ⇒ 一行都不写、一次都不搬（标签也在「不来回跑」这一条里）',
-        [s34.__xprobe.perfLine().badgeMoved, s34.__xprobe.perfLine().badgeRel, lab34(bd34.libonly)],
-        [mv34, 3, '我单向']);
-      ok('v0.11.9 签名第 6 格恒空（标签不住徽标里了）：档位与虚实线改记在标签自己的 data-k 上（~虚/+实）——'
-        + '老读者只读到第 4 格前的字段，徽标签名从此与标签翻动无关',
-        String(bd34.libonly.getAttribute('data-xsig').split('|')[5] || '') === ''
+      eq('正向对照（粘住）：给老位置补上矩形再跑一趟 ⇒ 一次都不搬、关系标签照常计数（「不来回跑」这一条）',
+        [s34.__xprobe.perfLine().badgeMoved, s34.__xprobe.perfLine().badgeRel],
+        [mv34, 3]);
+      ok('v0.12.12 签名按「h|bad|form|relkey|theme」五格（第 4 格记关系档位，标签住进徽标、宽度由它决定）：档位翻动即改徽标签名，'
+        + '同时标签自己的 data-k 也记 ~虚/+实',
+        String(bd34.libonly.getAttribute('data-xsig').split('|')[3] || '') === 'me~'
         && chipOf(bd34.libonly).getAttribute('data-k') === 'me~'
         && chipOf(bd34.both).getAttribute('data-k') === 'mutual+',
         [bd34.libonly.getAttribute('data-xsig'), chipOf(bd34.libonly).getAttribute('data-k')]);
@@ -8214,10 +8377,10 @@ const layersDone = (async function () {
       btn34.setAttribute('aria-label', '正在关注 @tb1');
       s34.__xprobe.renderBlocks(true);
       eq('正向对照：页面那颗钮翻成「正在关注」⇒ 标签就地从「他单向」改判「我单向」（虚线橙、data-k 翻成 me~）；'
-        + '徽标签名一个字不动（档位不住徽标里了）',
+        + '关系标签住进徽标 ⇒ 档位进徽标签名第 6 格，翻档即改签名（宽度要重挑）',
         [lab34(bd34.tb1), chipOf(bd34.tb1).style.border, chipOf(bd34.tb1).getAttribute('data-k'),
           bd34.tb1.getAttribute('data-xsig') === sig34],
-        ['我单向', '1px dashed color-mix(in srgb, #f1b84b 55%, #13231b)', 'me~', true]);
+        ['我单向', '1px dashed color-mix(in srgb, #f1b84b 55%, #13231b)', 'me~', false]);
       btn34.setAttribute('data-testid', '84021-follow');
       btn34.setAttribute('aria-label', '回关 @tb1');
 
@@ -8337,22 +8500,19 @@ const layersDone = (async function () {
         sq34(w);
         s34o.__xprobe.renderBlocks(true);
         const b = one34.querySelectorAll('[data-xprobe="blk"]')[0] || null;
-        const lb = b && btnOf(b) ? (b.children || []).filter((c) => c !== btnOf(b))[0] || null : null;
-        return { form: b ? b.getAttribute('data-f') : null, rel: !!chipOf(b), ratio: !!lb, btn: !!btnOf(b) };
+        return { form: b ? b.getAttribute('data-f') : null, rel: !!(b && chipOf(b)), btn: !!btnOf(b) };
       };
       const wide34 = pass34(240), mid34 = pass34(180), tight34 = pass34(140), dot34 = pass34(118);
-      // 预算（关系标签搬走后只剩两件）：整颗 46 + 比例标签(缝 4 + "96%" 36) = 86
-      //   ⇒ 缝 ≥86 ⇔ W≥174 比例标签出；W<134 只剩钮；连 46 都放不下但 ≥14 ⇒ 小红点。
-      //   关系标签住在名字行，四种宽度下一颗都不缺（这正是搬家的意义：v0.11.8 它和比例标签挤同一条缝，
-      //   180/140/118 三档全被挤掉——用户截图里那种「标签格子空着」就是它）。
-      eq('宽行（240，缝 152）：钮 + 比例标签都画得下，名字行的关系标签也在',
-        [wide34.form, wide34.rel, wide34.ratio, wide34.btn], ['full', true, true, true]);
-      eq('挤一档（180，缝 92）：86 装得下了（v0.11.8 装不下——关系标签腾出了 40px）⇒ 钮 + 比例都留',
-        [mid34.form, mid34.rel, mid34.ratio], ['full', true, true]);
-      eq('再挤一档（140，缝 52）：86 不够 ⇒ 丢比例标签只保那颗钮；关系标签照样在名字行（徽标的退让链管不着它了）',
-        [tight34.form, tight34.rel, tight34.ratio, tight34.btn], ['full', true, false, true]);
-      eq('挤到只放得下点（118，缝 30）：徽标退成小红点；关系标签仍在名字行，「判得出来却没画」从此记 0（RL-11：位置不再抢标签的地）',
-        [dot34.form, dot34.rel, dot34.btn, s34o.__xprobe.perfLine().badgeRelNo], ['dot', true, false, 0]);
+      // v0.12.12 预算（badge 只承载关系状态，整颗远小于旧版）：关系标签永不因窄缝丢失（长昵称把互关挤没的根因），
+      // 只在极窄缝退成小红点（仍表状态）；行内不再画百分比、不再写拉黑钮（都收进悬浮弹窗）。
+      eq('宽行（240，缝 152）：整颗放下 ⇒ 关系标签在（无行内百分比/拉黑钮，二者在弹窗）',
+        [wide34.form, wide34.rel, wide34.btn], ['full', true, false]);
+      eq('挤一档（180，缝 92）：关系标签照样在（状态永不因窄缝丢失，这正是长昵称把互关挤没的修复点）',
+        [mid34.form, mid34.rel, mid34.btn], ['full', true, false]);
+      eq('再挤一档（140，缝 52）：极窄 ⇒ 退成小红点（状态以点的颜色编码、悬停弹窗仍显完整关系与拉黑入口；不再丢状态只保钮）',
+        [tight34.form, tight34.rel, tight34.btn, s34o.__xprobe.perfLine().badgeRelNo], ['dot', false, false, 0]);
+      eq('挤到只放得下点（118，缝 30）：徽标退成小红点；关系标签让位给点（blank 占位暂不记，仍不静默）',
+        [dot34.form, dot34.rel, dot34.btn, s34o.__xprobe.perfLine().badgeRelNo], ['dot', false, false, 0]);
 
       // ---- 读钮的 scope 是整行，不是名字节点（真机时间线那颗关注钮不长在 User-Name 里） ----
       const rows34m = h('div', { lang: 'zh' }, [
@@ -8420,7 +8580,7 @@ const layersDone = (async function () {
       ok('闸排在发请求之前：modelDraft 里「没开就 return」那一行排在 modelSend( 之前（顺序倒了就是先发了再问该不该发）',
         swDraft.indexOf('if (!c.on) return') >= 0 && swDraft.indexOf('if (!c.on) return') < swDraft.indexOf('modelSend(payload'), '');
       const mf35 = JSON.parse(rd('manifest.json'));
-      eq('RL-3 的账：这一腿没为任何模型端口加过 host_permissions（清单仍是回环三条 + 自家域名一条；11434/1234/8000 一个都不在）',
+      eq('RL-3 的账：这一腿没为任何模型端口加过 host_permissions（v0.12.15 清单 = 回环三条 + boot4 云域 + 智枢两档共六条；11434/1234/8000 一个都不在）',
         [mf35.host_permissions.length, /11434|:1234|:8000/.test(JSON.stringify(mf35.host_permissions)), /<all_urls>/.test(JSON.stringify(mf35.permissions))],
         [4, false, false]);
       // ---- A2. v0.11.6 预设提示词 + ✎ 编辑器（源码字面钉）----
@@ -8708,7 +8868,7 @@ const layersDone = (async function () {
         IDS[AC].children[1].textContent, '@demo_own · 帖子 9004 · 正文 7 字');
 
       // ---- D. 变异对照：这几行不在，上面的判据就得红 ----
-      const sA = src.replace("      aiEl.style.display = (aiGateOn() && !fabFoldGet()) ? 'flex' : 'none';", '      // 抠掉这一行');
+      const sA = src.replace("      aiEl.style.display = (aiGateOn() && !fabFoldGet() && fabVisOn(AIBTN_ID)) ? 'flex' : 'none';", '      // 抠掉这一行');
       const sB = src.replace('    if (t.why) { aiNote = t.why;', '    if (false) { aiNote = t.why;');
       const sC = src.replace("      if (aiOpen) { aiOpen = false; aiBusy = false; }\n      renderAi();",
         '      if (aiOpen) { aiOpen = false; aiBusy = false; }');
@@ -9016,9 +9176,19 @@ const layersDone = (async function () {
 
       // 验收 8：版本戳四处一致
       const spA = rd('ui/sidepanel.js');
-      eq('版本戳四处一致：manifest.version == core VER、core BUILD == sidepanel PANEL_BUILD',
-        [mfA.version === SRC_VER, SRC_VER, /PANEL_BUILD = '([^']+)'/.exec(spA)[1] === SRC_BUILD, SRC_BUILD],
-        [true, '0.12.3', true, '2026-11-11-c']);
+      // 换版不该让自检自己变红（11-12 刚在主 skill 修过同类漂移）：只查四处互相相等 + 形状对，
+      // 不钉死任何字面版本；另给一条反向变异，证明它真的在比而不是恒真。
+      const spAv = rd('ui/sidepanel.js');
+      const panelBuildNow = () => /PANEL_BUILD = '([^']+)'/.exec(rd('ui/sidepanel.js'))[1];
+      const verFour = () => mfA.version === SRC_VER && SRC_BUILD === panelBuildNow() &&
+        /^\d+\.\d+\.\d+$/.test(mfA.version) && /^\d{4}-\d{2}-\d{2}-[a-z]$/.test(SRC_BUILD);
+      ok('版本戳四处一致：manifest.version == core VER、core BUILD == sidepanel PANEL_BUILD（不钉死字面）',
+        verFour(), [mfA.version, SRC_VER, SRC_BUILD, panelBuildNow()]);
+      ok('正向对照：把 panel 的 BUILD 改一格，同一条判据当场变红',
+        verFour() === true && (() => {
+          const mut = spAv.replace("PANEL_BUILD = '" + SRC_BUILD + "'", "PANEL_BUILD = '1999-01-01-z'");
+          return mut !== spAv && /PANEL_BUILD = '([^']+)'/.exec(mut)[1] !== SRC_BUILD;
+        })(), '');
 
       console.log('[art-020] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
     }
@@ -9037,7 +9207,11 @@ const layersDone = (async function () {
         artKids.push(h('button', { 'data-testid': 'like', 'aria-label': '144 likes' }, [T('♥')]));
         artKids.push(h('button', { 'data-testid': 'retweet', 'aria-label': '0 reposts' }, [T('↻')]));
         artKids.push(h('button', { 'data-testid': 'reply', 'aria-label': '232 replies' }, [T('↩')]));
-        artKids.push(h('div', { role: 'group', 'aria-label': '232 replies、0 reposts、144 likes、5 bookmarks、5,168 views' }, [T('g')]));
+        // v0.12.7：noViews 场景要「真的没有任何浏览量」——group 聚合标签本来也是新增兜底源，
+        // 若不挖掉 5,168 views，新口径会从这里读到数、skip 兜底判据就名不副实。
+        artKids.push(h('div', { role: 'group', 'aria-label': o.noViews
+          ? '232 replies、0 reposts、144 likes、5 bookmarks'
+          : '232 replies、0 reposts、144 likes、5 bookmarks、5,168 views' }, [T('g')]));
         artKids.push(h('div', { 'data-testid': 'User-Name' }, [h('a', { href: '/ZX2023225' }, [T('之书')])]));
         artKids.push(h('div', { 'data-testid': 'tweetText' }, [T('正文')]));
         const root23 = h('div', {}, [
@@ -9060,21 +9234,19 @@ const layersDone = (async function () {
         [H1.hotDetStep(), sg1.document.querySelectorAll('.ysy-xprobe-hotdet').length, !!sg1.document.getElementById(H1.HOTDETPOP_ID)],
         [0, 0, false]);
 
-      // 验收 2：开闸 → 页头 h2 后面缝进徽标（兄弟插入、不动 X 的布局），数值对得上截图口径
+      // 验收 2（v0.12.8 用户裁定改造）：开闸 → 页头**不再**出芯（顶部与右侧重复，去掉左侧那颗），
+      // 悬浮详情能力迁到行内徽标。数值判据原样保留，只是读数的取数函数换成 hotArtData(本条 article)。
       H1.setHotBadge(true);
-      const chip23 = sg1.document.querySelector('.' + H1.HOTDET_CLS);
-      ok('页头出芯：插在 h2 之后（previousElementSibling = h2，宿主是页头那一层）',
-        !!chip23 && chip23.previousElementSibling && chip23.previousElementSibling.tagName === 'H2'
-        && chip23.parentElement.tagName === 'HEADER',
-        [!!chip23, chip23 && chip23.previousElementSibling && chip23.previousElementSibling.tagName,
-         chip23 && chip23.parentElement && chip23.parentElement.tagName]);
-      const d23 = H1.hotDetData();
-      eq('徽标值 = 解析读数：1 小时 5168 次 → 🚀 5.2k/h（trending 橙）',
-        [chip23.textContent, chip23.getAttribute('data-tid'), d23.tid, d23.views, d23.likes, d23.rt, d23.replies, d23.bm, d23.tier],
-        ['🚀 5.2k/h', TID23, TID23, 5168, 144, 0, 232, 5, 'trending']);
-      ok('芯样式带悬停语义（pointerEvents:auto 收悬停、flex:none 不被拉伸）+ 红线（自己不滚动）',
-        chip23.style.pointerEvents === 'auto' && chip23.style.flex === 'none' && !chip23.__scrolls,
-        [chip23.style.pointerEvents, chip23.style.flex, chip23.__scrolls]);
+      ok('页头不出芯：开闸后 HEADER/h2 附近一颗 HOTDET 都没有（左侧重复徽标已去掉）',
+        sg1.document.querySelectorAll('.' + H1.HOTDET_CLS + ', [data-xprobe="hotdet"]').length === 0,
+        sg1.document.querySelectorAll('.' + H1.HOTDET_CLS).length);
+      const chip23 = sg1.document.querySelector('[data-xprobe="hotvel"]');
+      const d23 = H1.hotArtData(sg1.document.querySelector('article[data-testid="tweet"]'));
+      ok('行内徽标出芯、值 = 本条帖子读数：1 小时 5168 次 → 🚀 5.2k/h（trending 橙）',
+        !!chip23 && chip23.textContent === '🚀 5.2k/h'
+        && [d23.tid, d23.views, d23.likes, d23.rt, d23.replies, d23.bm, d23.tier].join('|')
+          === [TID23, 5168, 144, 0, 232, 5, 'trending'].join('|'),
+        [chip23 && chip23.textContent, d23 && [d23.tid, d23.views, d23.likes, d23.rt, d23.replies, d23.bm, d23.tier]]);
 
       // 验收 3：悬停出详情卡 —— 八行、数值与截图一致、发布时间 Y:M:D H:M:S
       chip23.__geo = { left: 900, top: 30, width: 70, height: 22 };
@@ -9104,30 +9276,30 @@ const layersDone = (async function () {
       eq('宽限到期整棵摘净（卡不在 DOM、账清零）',
         [!!pop23.parentNode, H1.__hotDet().pop, H1.__hotDet().hideT, H1.__hotDet().key], [false, false, 0, '']);
 
-      // 验收 5：节拍纪律 —— 没变不写（0 次createElement）；数值变了原地改字、不换节点
+      // 验收 5（v0.12.8）：hotDetStep 页头芯已去掉 —— 恒 0、一个节点都不造；数据变化走 hotArtData
       const made23 = sg1.__created.length;
-      eq('没变再跑一轮：返回 0、一个节点都不造', [H1.hotDetStep(), sg1.__created.length - made23], [0, 0]);
+      eq('页头芯去掉后 hotDetStep 恒 0、一个节点都不造', [H1.hotDetStep(), sg1.__created.length - made23], [0, 0]);
       sg1.document.querySelector('a[href$="/analytics"]').setAttribute('aria-label', '6,168 次观看');
-      const chipRef23 = sg1.document.querySelector('.' + H1.HOTDET_CLS);
-      eq('数值变了原地改字（🚀 6.2k/h）、还是原来那颗节点',
-        [H1.hotDetStep(), sg1.document.querySelector('.' + H1.HOTDET_CLS) === chipRef23, chipRef23.textContent],
-        [1, true, '🚀 6.2k/h']);
+      const d23b = H1.hotArtData(sg1.document.querySelector('article[data-testid="tweet"]'));
+      eq('数值变了悬浮取数跟着变（6.2k/h）、页头仍无芯',
+        [d23b.views, d23b.velLabel, sg1.document.querySelectorAll('.' + H1.HOTDET_CLS).length],
+        [6168, '6.2k/h', 0]);
 
-      // 验收 6：skip 兜底 —— 没有浏览量就诚实挂 🌱 —、弹卡八行全是 —（不编数）
+      // 验收 6：skip 兜底 —— 没有浏览量就如实报 skip、弹卡八行全是 —（不编数）
       const sg2 = statusPage23({ noViews: true });
       const H2 = sg2.__xprobe;
       H2.setHotBadge(true);
-      const chip2 = sg2.document.querySelector('.' + H2.HOTDET_CLS);
-      eq('缺浏览量：hotDetData 如实报 skip、芯挂 🌱 —',
-        [H2.hotDetData().skip, chip2.textContent], ['missing', '🌱 —']);
+      eq('缺浏览量：hotArtData 如实报 skip（本条帖子无 views）',
+        H2.hotArtData(sg2.document.querySelector('article[data-testid="tweet"]')).skip, 'missing');
       eq('弹卡八行全是 —（不编数）',
         H2.hotDetRows(H2.hotDetData()).every((r) => r[1] === '—'), true);
 
-      // 验收 7：闸门联动 —— setHotBadge(false) 芯与卡当场清零；非详情页一颗不出
-      chip2.fire('mouseenter');
-      H2.setHotBadge(false);
-      eq('关闸当场摘净：芯清零、弹卡收起',
-        [sg2.document.querySelectorAll('.' + H2.HOTDET_CLS + ', [data-xprobe="hotdet"]').length, H2.__hotDet().pop], [0, false]);
+      // 验收 7：闸门联动 —— setHotBadge(false) 行内徽标与弹卡当场清零；非详情页页头一颗不出
+      chip23.fire('mouseenter');
+      ok('行内徽标悬浮能出卡（弹卡挂账）', H1.__hotDet().pop === true, H1.__hotDet());
+      H1.setHotBadge(false);
+      eq('关闸当场摘净：行内徽标清零、弹卡收起',
+        [sg1.document.querySelectorAll('[data-xprobe="hotvel"]').length, H1.__hotDet().pop], [0, false]);
       delete store['ysy.xprobe.hotbadge'];
       const sg3 = statusPage23({ home: true });
       const H3 = sg3.__xprobe;
@@ -9181,7 +9353,742 @@ const layersDone = (async function () {
       /if \(m === 'POST' && u\.pathname === '\/dbpurge'\)/.test(swSrc) &&
       (swSrc.match(/manifest/g) || []).length >= 0, '');
 
+    console.log('\n[37] v0.12.6 关系标签回昵称右侧 + 等页面渲染完才动笔（红线：评论增量加载期间零写入）');
+    {
+      const core35 = src;
+      // ① 位置：Xe（名字锚 afterend = 显示名右侧）必须排在 po（User-Name 容器 beforeend）之前。
+      //    上一版 po 优先，X 的 User-Name 是 grid ⇒ 胶囊被当成新格子，独占一行还拉满 = 截图里昵称下方那条宽绿条。
+      const order35 = (s) => {
+        const a = s.indexOf('const n = relNameAnchor(cands[i], h, le)');
+        const b = s.indexOf('const n = relNameWrap(cands[i], h)');
+        return a >= 0 && b >= 0 && a < b;
+      };
+      ok('安置次序改成「名字锚右侧」优先、容器末尾退成兜底（不改 X 宿主布局，拿到参考插件同款视觉位置）',
+        order35(core35), [core35.indexOf('const n = relNameAnchor(cands[i], h, le)'),
+          core35.indexOf('const n = relNameWrap(cands[i], h)')]);
+      ok('正向对照：把「名字锚右侧」那一支抠掉 ⇒ 判据当场变红（这条针脚咬住位置，不许悄悄退回旧次序）',
+        !order35(core35.replace('const n = relNameAnchor(cands[i], h, le)', 'const n = null')), '');
+      // ② 行为：一个「po 本来会命中」的 User-Name（既有 @handle 文本又有主页锚）也落到名字锚右侧
+      const un35 = h('div', { 'data-testid': 'User-Name' }, [
+        h('a', { href: '/aa' }, [h('span', {}, [T('甲')])]),
+        h('span', {}, [T('@aa')]),
+        h('span', {}, [T('1小时')]),
+      ]);
+      const root35 = h('div', {}, [un35]);
+      const s35 = run(root35, '/home', 'https://x.com/home');
+      const X35 = s35.__xprobe;
+      const spot35 = X35.relPlace(un35, 'aa');
+      eq('relPlace 在完整名字行上给的是「名字锚 afterend」，不是「User-Name 容器 beforeend」',
+        [spot35 && spot35.pos, spot35 && spot35.host.getAttribute('href')], ['afterend', '/aa']);
+      // ③ 防拉伸四件套 + 兄弟位边距档（参考插件 `a > .xro-badge` 是子选择器，兄弟位不该吃 4px 档）
+      const rel35 = { key: 'mutual', lab: '互关', color: '#a8e89a', dash: false, tip: '互关：两边都读到了' };
+      const sibling35 = X35.relChipEl(rel35, h('a', { href: '/aa' }, []), 'aa', 'afterend');
+      eq('胶囊只管自己不被拉伸：alignSelf / justifySelf / maxWidth / height / gridRow；纵排 flex 或 grid 里都不另起一行、不占满',
+        [sibling35.style.alignSelf, sibling35.style.justifySelf, sibling35.style.maxWidth,
+          sibling35.style.height, sibling35.style.gridRow, sibling35.style.marginInline],
+        ['center', 'start', 'max-content', 'max-content', '1', '0 8px']);
+      eq('只有真长在 a 里面的那一档才用 4px（参考插件 a > .xro-badge 的子选择器语义）',
+        X35.relChipEl(rel35, h('a', { href: '/aa' }, []), 'aa', 'beforeend').style.marginInline, '4px');
+      // ④ 时机：逐条对译参考插件 xt({delayMs:Al=180})，DOM 突发期间整趟不写，静默后帧后再画
+      eq('静默值 = 参考插件 content-script.js 的 Al（180ms）', X35.__relSettle(), 180);
+      ok('源码针脚齐：180ms 静默 + 一批只排一趟（不无限顺延）+ 还在加载就顺延 + 帧后动笔 + 非 force 整趟跳过',
+        /const REL_SETTLE_MS = 180;/.test(core35) && /if \(relRenderT\) return;/.test(core35)
+        && !/clearTimeout\(relRenderT\)/.test(core35)
+        && /if \(relDomBusy\(\)\) \{ badgeNeedScan = true; relRenderSoon\(\); return; \}/.test(core35)
+        && /requestAnimationFrame\(go\)/.test(core35)
+        && /if \(!force && relDomBusy\(\)\)/.test(core35), '');
+      ok('正向对照：把突发期「整趟不写」那道闸抠掉 ⇒ 判据当场变红（用户点名的项目红线）',
+        !/if \(!force && relDomBusy\(\)\)/.test(core35.replace('if (!force && relDomBusy())', 'if (false)')), '');
+      // ⑤ 行为：喂一批大 mutation（= X 正在增量拉下一页评论）⇒ 观察器判突发 ⇒ renderBlocks 一个节点都不写
+      const rec35 = { type: 'childList', target: root35, addedNodes: [] };
+      X35.feedMutations(Array.from({ length: 30 }, () => rec35));
+      const skips35 = X35.perfLine().badgeSkips;
+      const chips35 = root35.querySelectorAll('[data-xprobe="rel"]').length;
+      ok('页面正在批量挂载：突发判据亮起（排队未清 / 突发窗未过）',
+        X35.relDomBusy() === true && X35.mutQ().burst > 0, X35.mutQ());
+      X35.renderBlocks();   // 非 force：真机节拍走的正是这条路
+      ok('突发期整趟跳过且留旗子：徽标/标签一个新节点都没写进页面，等 DOM 安静后下一拍补画',
+        X35.perfLine().badgeSkips > skips35
+        && root35.querySelectorAll('[data-xprobe="rel"]').length === chips35
+        && X35.mutQ().badgeNeedScan === true,
+        [X35.perfLine().badgeSkips, skips35, root35.querySelectorAll('[data-xprobe="rel"]').length, chips35]);
+    }
 
+    console.log('\n[38] v0.12.7 流量取数整块对译参考插件：桥收 GraphQL 精确读数 + 按 tid 定位主贴 + 页面渲染完才动笔');
+    {
+      const core38 = src, bridge38 = rd('content/bridge.js');
+      // ---------- A. 主世界只读信使：从 X 自己的 GraphQL 回包收割帖子精确读数 ----------
+      const bwin = {
+        listeners: {}, sent: [], location: { origin: 'https://x.com', pathname: '/home' },
+        addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); },
+        postMessage(msg) { this.sent.push(msg); },
+      };
+      // 一条典型 TweetDetail 回包：views.count 是字符串、legacy.* 是整数；混一条推广帖（应被剔）
+      const gqlTweet = (id, views, opts) => {
+        const o = opts || {};
+        const r = {
+          __typename: 'Tweet', rest_id: id,
+          views: { count: String(views), state: 'EnabledWithCount' },
+          legacy: { id_str: id, favorite_count: 144, retweet_count: 7, reply_count: 22,
+            bookmark_count: 5, created_at: 'Tue Nov 11 15:00:00 +0000 2026',
+            promotedMetadata: o.promoted ? { x: 1 } : undefined },
+          core: { user_results: { result: { legacy: { screen_name: 'NickTrader8801' } } } },
+        };
+        if (o.noState) r.views.state = 'Disabled';
+        return { tweet_results: { result: r } };
+      };
+      const payload38 = { data: { timeline: { instructions: [{ entries: [
+        { content: { itemContent: gqlTweet('2120763270491492380', 296, {}) } },
+        { content: { itemContent: gqlTweet('9999999999999999999', 99999, { promoted: true }) } },
+        { content: { itemContent: gqlTweet('8888888888888888888', 500, { noState: true }) } },
+      ] }] } } };
+      bwin.__res = { ok: true, clone() { return { json: async () => payload38 }; } };
+      bwin.fetch = async () => bwin.__res;
+      vm.runInNewContext(bridge38, { window: bwin, document: { querySelectorAll: () => [], querySelector: () => null }, console: console },
+        { filename: 'content/bridge.js#38' });
+      await bwin.fetch('https://x.com/i/api/graphql/abc/TweetDetail?variables=%7B%7D');
+      await new Promise((r) => setImmediate(r));   // clone().json().then(harvest) 是微任务
+      const tp = bwin.sent.filter((m) => m.type === 'tweetpush');
+      eq('桥旁听到货就推 tweetpush（自家记号 + 只带有效帖），推广帖与 views.state≠EnabledWithCount 都不进账',
+        [tp.length, tp[0] && tp[0].source, tp[0] && tp[0].tweets && Object.keys(tp[0].tweets)],
+        [1, 'ysy-xprobe-rel-bridge', ['2120763270491492380']]);
+      eq('精确读数逐项对齐参考插件 extractTweetData：views.count 字符串→整数、legacy 五项 + createdMs + screenName',
+        tp[0].tweets['2120763270491492380'],
+        { id: '2120763270491492380', views: 296, likes: 144, rt: 7, replies: 22, bm: 5,
+          createdMs: Date.parse('Tue Nov 11 15:00:00 +0000 2026'), screenName: 'NickTrader8801' });
+      ok('旁听零改动：调用方拿到的还是 X 自己那个回包对象；桥无新出口/无定时器/无观察器',
+        (await bwin.fetch('https://x.com/i/api/graphql/abc/TweetDetail')) === bwin.__res
+        && !/setInterval|MutationObserver|XMLHttpRequest\.prototype\.send|window\.open/.test(bridge38), '');
+      // 问询带 tids 才回 tweets 字段：只回点名的帖；不带 tids 的老问询回包形状不变（关系桥判据不回归）
+      const qh = (bwin.listeners.message || [])[0];
+      qh({ source: bwin, data: { source: 'ysy-xprobe-rel-bridge', type: 'query', id: 'q38a', tids: ['2120763270491492380'] } });
+      qh({ source: bwin, data: { source: 'ysy-xprobe-rel-bridge', type: 'query', id: 'q38b' } });
+      const ra = bwin.sent.filter((m) => m.id === 'q38a')[0], rb = bwin.sent.filter((m) => m.id === 'q38b')[0];
+      eq('冷启动问询带 tids ⇒ 回那几条帖子读数；不带 tids ⇒ 回包无 tweets 字段（老判据不破）',
+        [Object.keys(ra.tweets), Object.prototype.hasOwnProperty.call(rb, 'tweets')],
+        [['2120763270491492380'], false]);
+
+      // ---------- B. core 数据层：精确读数优先、DOM 兜底、按 URL 定位主贴 ----------
+      // 详情页真机形状（art-023 根因复刻）：主贴 analytics 链接无 aria-label、数字只在可见文字「296 查看」；
+      // 评论区第一条 article 排在主贴前面（验证「不只取第一条」）。
+      const TID38 = '2120763270491492380', RID38 = '7777777777777777777';
+      const detailKids = (tid, label, vis) => {
+        const k = [
+          h('a', { href: '/someone/status/' + tid + '/analytics' }, [T(vis)]),
+          h('time', { datetime: new Date(Date.now() - 3600000).toISOString() }, [T('t')]),
+          h('div', { 'data-testid': 'User-Name' }, [h('a', { href: '/someone' }, [T('某甲')])]),
+          h('div', { 'data-testid': 'tweetText' }, [T('正文')]),
+          h('a', { href: '/someone/status/' + tid }, [T('link')]),
+        ];
+        if (label) k[0].setAttribute('aria-label', label);
+        return h('article', { 'data-testid': 'tweet' }, k);
+      };
+      const root38 = h('div', {}, [
+        h('header', {}, [h('div', { 'data-testid': 'app-bar-back' }, [T('←')]), h('h2', {}, [T('帖子')])]),
+        detailKids(RID38, '10 次查看。查看帖子分析', '10 查看'),   // 评论排前面
+        detailKids(TID38, null, '296 查看'),                       // 主贴：无 aria-label，数字在可见文字
+      ]);
+      const sb38 = run(root38, '/someone/status/' + TID38, 'https://x.com/someone/status/' + TID38);
+      const H38 = sb38.__xprobe;
+      // B1：无桥读数时，可见文字兜底救活详情页主贴（art-023 根因）—— 且按 URL 定位，不误取第一条评论
+      const d38 = H38.hotDetData();
+      eq('详情页按 URL status id 精确定位主贴（不取第一条评论）：可见文字「296 查看」兜底成浏览量',
+        [d38 && d38.tid, d38 && d38.views], [TID38, 296]);
+      ok('按 URL 定位有正向对照：把 URL 换成评论那条 ⇒ 主贴跟着变成评论 id',
+        run(root38, '/someone/status/' + RID38, 'https://x.com/someone/status/' + RID38).__xprobe.hotDetData().tid === RID38, '');
+      // B2：桥精确读数优先于 DOM —— 同样主贴，喂 296 的整数读数后 likes/rt/bm 用桥值，不再按 DOM 猜
+      const nMerge = H38.hotNetMerge({ [TID38]: { id: TID38, views: 296, likes: 999, rt: 7, replies: 22,
+        bm: 5, createdMs: Date.now() - 3600000, screenName: 'NickTrader8801' } });
+      eq('hotNetMerge 只收合法帖子号、返回真变了账的条数', nMerge, 1);
+      const dn = H38.hotDetData();
+      eq('桥读数在手：详情页主贴八栏走精确值（likes 取桥的 999，不取 DOM 的 144）',
+        [dn.views, dn.likes, dn.rt, dn.bm], [296, 999, 7, 5]);
+      eq('非法 tid / 缺 views / 无 createdMs 的脏读数一律不进账',
+        H38.hotNetMerge({ abc: { views: 1 }, '2120763270491492380': { views: 400 },
+          '123456789': { views: 5, createdMs: 0 } }), 0);
+      // B3：group 聚合标签兜底（评论 analytics 只写「查看帖子分析」不带数字时）
+      const aggOnly = h('article', { 'data-testid': 'tweet' }, [
+        h('a', { href: '/u/status/6666666666666666666/analytics', 'aria-label': '查看帖子分析' }, [T('v')]),
+        h('time', { datetime: new Date(Date.now() - 7200000).toISOString() }, [T('t')]),
+        h('div', { role: 'group', 'aria-label': '11 回复、9 喜欢、296 次观看' }, [T('g')]),
+        h('a', { href: '/u/status/6666666666666666666' }, [T('link')]),
+      ]);
+      const Hagg = run(h('div', {}, [aggOnly]), '/home', 'https://x.com/home').__xprobe;
+      eq('analytics 无数字时从聚合 group 的「296 次观看」兜底（收藏没有就不编 0）',
+        Hagg.hotParseArticle(aggOnly, Date.now(), null).views, 296);
+
+      // ---------- C. RL-30：热度渲染也在「页面渲染完才动笔」那道闸里 ----------
+      ok('源码针脚：hotBadgeAuto 先问 relDomBusy（加载中就整趟不画），推送合并与问询回话都走 180ms 静默窗重画',
+        /function hotBadgeAuto\(\) \{ if \(!hotBadgeGet\(\) \|\| relDomBusy\(\)\) return 0;/.test(core38)
+        && /if \(d\.type === 'tweetpush'\)[\s\S]{0,160}hotNetMerge\(d\.tweets\)/.test(core38)
+        && /relFiberMerge\(d\.users\)[\s\S]{0,220}hotNetMerge\(d\.tweets\)/.test(core38)
+        && /const REL_SETTLE_MS = 180;/.test(core38), '');
+      ok('正向对照：抠掉 hotBadgeAuto 的 relDomBusy 闸 ⇒ 判据当场变红（用户点名的项目红线）',
+        !/if \(!hotBadgeGet\(\) \|\| relDomBusy\(\)\) return 0;/.test(
+          core38.replace('if (!hotBadgeGet() || relDomBusy()) return 0;', 'if (!hotBadgeGet()) return 0;')), '');
+      // 行为：突发期喂大 mutation ⇒ hotBadgeAuto 一颗都不画
+      const hb = run(root38, '/home', 'https://x.com/home');
+      const Hh = hb.__xprobe;
+      hb.GM_setValue && hb.GM_setValue('ysy.xprobe.hotbadge', true);
+      hb.window.__ysyHotOn = true;
+      Hh.setHotBadge(true);   // 用户动作：当场开、当场画（先清场）
+      const madeBefore = hb.document.querySelectorAll('.ysy-xprobe-hotvel').length;
+      Hh.feedMutations(Array.from({ length: 30 }, () => ({ type: 'childList', target: root38, addedNodes: [] })));
+      ok('页面增量挂载中：突发窗亮起、relDomBusy=true', Hh.relDomBusy() === true, Hh.mutQ());
+      Hh.hotBadgeAuto();     // 节拍/推送走的就是这里 —— 突发期必须一个节点都不写
+      eq('突发期 hotBadgeAuto 不往行里塞徽标（页面不抖）：节点数不变',
+        hb.document.querySelectorAll('.ysy-xprobe-hotvel').length, madeBefore);
+      Hh.setHotBadge(false);
+
+      // ---------- D. 零新出口/权限 + 版本戳 ----------
+      const mfA = JSON.parse(rd('manifest.json'));
+      const perm38 = mfA.permissions || [], hosts38 = mfA.host_permissions || [];
+      ok('零新出口零新权限：host_permissions 仍只有本机回环与指定域名（没有 x.com / api.x.com）',
+        !hosts38.some((u) => /x\.com|twitter\.com/.test(u))
+        && perm38.indexOf('webRequest') < 0 && perm38.indexOf('declarativeNetRequest') < 0, hosts38);
+      ok('core 侧不发请求：热度链路无 fetch/GM_xmlhttpRequest（取数全在只读桥那边）',
+        !/fetch\(|GM_xmlhttpRequest/.test(core38.slice(core38.indexOf('ART020 本页热度榜'), core38.indexOf('function hotBadgeGet'))), '');
+      ok('版本戳四处一致（不钉死字面，只验四处相等且形态对；换版不该让自检变红）',
+        (() => {
+          const sp = rd('ui/sidepanel.js');
+          const ver = /"version":\s*"([^"]+)"/.exec(rd('manifest.json'));
+          const cver = /const VER = '([^']+)'/.exec(core38);
+          const cb = /const BUILD = '([^']+)'/.exec(core38);
+          const pb = /const PANEL_BUILD = '([^']+)'/.exec(sp);
+          return ver && cver && cb && pb && ver[1] === cver[1] && cb[1] === pb[1]
+            && /^\d+\.\d+\.\d+$/.test(ver[1]) && /^\d{4}-\d{2}-\d{2}-[a-z]$/.test(cb[1]);
+        })(), '');
+    }
+
+    // ================= [39] v0.12.8 行内徽标悬浮详情 + 页头左侧徽标去掉 =================
+    {
+      const passBase = pass;
+      console.log('\n[39] v0.12.8 行内徽标悬浮（评论/帖子右侧都支持）/ 数据取本条帖子 / 页头左侧去掉');
+      const core39 = rd('content/core.js');
+      // A. 源码针脚：hotBadgeRender 给行内徽标绑 bindDetHover(b, () => hotArtData(art))；
+      //    bindDetHover 走 dataOf()；hotDetStep 不再造 HOTDET_CLS 节点。
+      ok('行内徽标挂悬浮：hotBadgeRender 里 bindDetHover(b, () => hotArtData(art))',
+        /bindDetHover\(b, \(\) => hotArtData\(art\)\)/.test(core39), '');
+      ok('悬浮取数走 dataOf（可传本条帖子），不再是写死的 hotDetData()',
+        /typeof dataOf === 'function' \? dataOf\(\) : hotDetData\(\)/.test(core39)
+        && !/mouseenter'.*hotDetPopOpen\(chip, hotDetData\(\)\)/.test(core39), '');
+      ok('页头左侧徽标去掉：hotDetStep 不再造 HOTDET_CLS 节点（只留 SPA 切走收卡）',
+        /function hotDetStep\(\) \{[\s\S]{0,120}return 0;\s*\}/.test(core39)
+        && !/function hotDetStep\(\)[\s\S]{0,123}setAttribute\('class', HOTDET_CLS\)/.test(core39), '');
+      ok('热键/清场仍在：hotDetSweep 兜底摘 HOTDET_CLS 与弹卡（老遗留节点不残留）',
+        /function hotDetSweep\(\)[\s\S]{0,300}HOTDET_CLS/.test(core39), '');
+
+      // B. 行为：详情首页头 + 两颗行内徽标（评论 + 主贴），悬浮各自显示本条帖子的数据。
+      const MAIN39 = '2120763270491492380', REPLY39 = '2120763270491492381';
+      const iso39 = () => new Date(Date.now() - 3600000).toISOString();
+      function art39(tid, visits, likes) {
+        return h('article', { 'data-testid': 'tweet' }, [
+          h('a', { href: '/u/status/' + tid + '/analytics', 'aria-label': visits + ' 次查看' }, [T('v')]),
+          h('time', { datetime: iso39() }, [T('t')]),
+          h('button', { 'data-testid': 'like', 'aria-label': likes + ' likes' }, [T('L')]),
+          h('button', { 'data-testid': 'retweet', 'aria-label': '0 reposts' }, [T('R')]),
+          h('button', { 'data-testid': 'reply', 'aria-label': '1 replies' }, [T('P')]),
+          h('div', { role: 'group', 'aria-label': '1 replies、0 reposts、' + likes + ' likes、2 bookmarks、' + visits + ' views' }, [T('g')]),
+          h('div', { 'data-testid': 'User-Name' }, [h('a', { href: '/u' }, [T('u')])]),
+          h('div', { 'data-testid': 'tweetText' }, [T('正文 ' + tid)]),
+        ]);
+      }
+      const replyArt = art39(REPLY39, 10, 3);      // 评论排前面
+      const mainArt = art39(MAIN39, 296, 999);     // 主贴在后
+      const root39 = h('div', {}, [
+        h('header', {}, [h('div', { 'data-testid': 'app-bar-back' }, [T('←')]), h('h2', {}, [T('帖子')])]),
+        replyArt, mainArt,
+      ]);
+      const sb39 = run(root39, '/u/status/' + MAIN39, 'https://x.com/u/status/' + MAIN39);
+      const H39 = sb39.__xprobe;
+      H39.setHotBadge(true);
+      // 页头无芯；两颗 article 各挂一颗行内徽标
+      eq('页头不出芯、两颗行内徽标就位（评论 + 主贴）',
+        [sb39.document.querySelectorAll('.' + H39.HOTDET_CLS).length,
+         sb39.document.querySelectorAll('[data-xprobe="hotvel"]').length], [0, 2]);
+      const velChips = Array.prototype.slice.call(sb39.document.querySelectorAll('[data-xprobe="hotvel"]'));
+      velChips.forEach((c) => { c.__geo = { left: 900, top: 30, width: 70, height: 22 }; });
+      // 悬浮评论那颗 ⇒ 弹卡显示评论的读数（10 views / 3 likes），不是主贴的 296/999
+      velChips[0].fire('mouseenter');
+      const pop39 = sb39.document.getElementById(H39.HOTDETPOP_ID);
+      const txt39 = pop39 && pop39.textContent;
+      ok('悬浮评论徽标 → 详情卡显示评论本条数据（10 浏览 / 3 点赞），不误取主贴',
+        !!pop39 && /浏览量\s*10(?!\d)/.test(txt39) && /点赞\s*3(?!\d)/.test(txt39)
+        && !/浏览量\s*296/.test(txt39), [txt39 && txt39.slice(0, 160)]);
+      // 悬浮主贴那颗 ⇒ 弹卡改显主贴数据（296 浏览 / 999 点赞）
+      velChips[1].fire('mouseenter');
+      const txt39b = pop39.textContent;
+      ok('悬浮主贴徽标 → 详情卡改显主贴数据（296 浏览 / 999 点赞），且复用同一张卡',
+        /浏览量\s*296/.test(txt39b) && /点赞\s*999/.test(txt39b) && !/浏览量\s*10(?!\d)/.test(txt39b),
+        [txt39b.slice(0, 160)]);
+      // 延迟收卡沿用 art-023 的机制（微标 mouseleave → 200ms 宽限）
+      velChips[1].fire('mouseleave');
+      ok('行内徽标离开也走 200ms 宽限收卡（复用同一详情卡机制）',
+        !!pop39.parentNode && H39.__hotDet().hideT !== 0, [!!pop39.parentNode, H39.__hotDet().hideT]);
+      H39.setHotBadge(false);
+
+      // C. 正向对照：把 hover 绑回写死的 hotDetData()（旧实现）⇒ 「取本条帖子」判据当场失效。
+      const mutated = core39.replace('bindDetHover(b, () => hotArtData(art));', 'bindDetHover(b);');
+      ok('正向对照：去掉行内徽标的本条取数函数 ⇒ 悬浮判据当场变红',
+        !/bindDetHover\(b, \(\) => hotArtData\(art\)\)/.test(mutated)
+        && /bindDetHover\(b, \(\) => hotArtData\(art\)\)/.test(core39), '');
+
+      // D. RL-30 / 零出口保持：悬浮是事件驱动，不新增定时器/观察器/出口；关闸仍摘净。
+      ok('悬浮只挂自家徽标的 mouseenter/mouseleave，没有新增 setInterval/观察器/网络出口',
+        /chip\.addEventListener\('mouseenter'/.test(core39)
+        && /chip\.addEventListener\('mouseleave', hotDetPopHide\)/.test(core39)
+        && !/addEventListener\('mouseenter'[\s\S]{0,120}(scroll|wheel|fetch|XMLHttpRequest)/.test(core39), '');
+      eq('关闸后行内徽标与弹卡都清零',
+        [sb39.document.querySelectorAll('[data-xprobe="hotvel"]').length, H39.__hotDet().pop], [0, false]);
+
+      console.log('[39] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
+    }
+
+    // ================= [40] v0.12.9 grok 同款黑底符号钮 + 每颗单独开关（关掉不占位） =================
+    {
+      const passBase = pass;
+      console.log('\n[40] v0.12.9 黑底白符号 / 紧凑间距 / 折叠箭头 / 每颗单独开关（关掉不显示不占位）');
+      const core40 = rd('content/core.js');
+      const sp40 = rd('ui/sidepanel.js');
+      const html40 = rd('ui/sidepanel.html');
+      const css40 = rd('ui/sidepanel.css');
+      const sw40 = rd('background/sw.js');
+
+      // A. 源码针脚：符号表 / 黑底白图 / 紧凑 / 折叠箭头 / 显隐配置键
+      ok('九颗符号表齐（探=▾/▴、关=☰、榜=▤、热=✦、回=↩、杆=◎、帖=▦、稿=✎、观=◉）',
+        /\[FOLD_BTN_ID\]: \{ open: '▴', fold: '▾' \}/.test(core40)
+        && /\[FBTN_ID\]: '☰'/.test(core40) && /\[CBTN_ID\]: '▤'/.test(core40)
+        && /\[HOTBTN_ID\]: '✦'/.test(core40) && /\[RBTN_ID\]: '↩'/.test(core40)
+        && /\[BBTN_ID\]: '◎'/.test(core40) && /\[BPBTN_ID\]: '▦'/.test(core40)
+        && /\[AIBTN_ID\]: '✎'/.test(core40) && /\[FAB_ID\]: '◉'/.test(core40), '');
+      ok('grok 同款黑底白图：FAB_STY 纯黑底 + 白符号 + 细白圈 + 9px 圆角',
+        /background: '#000', color: '#f5f7fa', border: '1px solid rgba\(255,255,255,\.14\)'/.test(core40)
+        && /borderRadius: '9px'/.test(core40), '');
+      ok('紧凑间距：柱 gap 3px（原 6px）+ 黑托盘 + 12px 圆角',
+        /gap: '3px'/.test(core40) && /background: 'rgba\(0,0,0,\.45\)'/.test(core40)
+        && /borderRadius: '12px', padding: '6px 5px'/.test(core40), '');
+      ok('符号专用字号 fabGlyphPx（直径 0.46、12~20 封顶），读秒仍走 fabFontSty 两下不冲突',
+        /function fabGlyphPx\(px\) \{ return Math\.round\(Math\.max\(12, Math\.min\(20, px \* 0\.46\)\)\); \}/.test(core40)
+        && /bad \|\| cool\) \? fabFontSty/.test(core40), '');
+      ok('折叠箭头随状态翻：折叠写手里按 fold/open 写 ▾/▴',
+        /FAB_GLYPH\[FOLD_BTN_ID\]\[foldWant === 'folded' \? 'fold' : 'open'\]/.test(core40), '');
+      ok('每颗显隐独立配置 FABVIS_KEY + 折叠钮不可关（FAB_VIS_IDS 不含 FOLD_BTN_ID）',
+        /const FABVIS_KEY = 'ysy\.xprobe\.fabvis'/.test(core40)
+        && /const FAB_VIS_IDS = \[FBTN_ID, CBTN_ID, HOTBTN_ID, RBTN_ID, BBTN_ID, BPBTN_ID, AIBTN_ID, FAB_ID\]/.test(core40)
+        && /FAB_VIS_IDS\.indexOf\(id\) < 0\) return \{ ok: false/.test(core40), '');
+      ok('面板八颗勾选开关接线：html 有 data-fab 勾选框、JS 回显 + change 发 setFabVis、CSS 有网格样式',
+        (html40.match(/data-fab="ysy-xprobe-ext-/g) || []).length === 8
+        && /cmd\('setFabVis', \{ id: id, on: box\.checked \}\)/.test(sp40)
+        && /st\.fabvis && st\.fabvis\[id\] === false/.test(sp40)
+        && /\.fabVisGrid/.test(css40), '');
+      ok('SW 命令白名单放行 setFabVis（否则面板命令到不了 core）',
+        /'setFabRail', 'setFabVis', 'fabPosReset'/.test(sw40), '');
+
+      // B. 行为：建排 → 九颗符号到位；折叠态 ▾、展开态 ▴；关掉一颗当场摘掉不占位
+      delete store['ysy.xprobe.fabvis']; delete store['ysy.xprobe.fabfold'];
+      const fx40 = h('div', {}, []);
+      const sb40 = run(fx40, '/home', 'https://x.com/home');
+      const H40 = sb40.__xprobe;
+      const by40 = (id) => IDS[id];
+      H40.fabBtn();   // 建排（默认折叠）
+      eq('九颗字面全是符号、无一个汉字（探在折叠态是 ▾）',
+        [by40('ysy-xprobe-ext-foldbtn').textContent, by40('ysy-xprobe-ext-fbtn').textContent,
+          by40('ysy-xprobe-ext-cbtn').textContent, by40('ysy-xprobe-ext-rbtn').textContent,
+          by40('ysy-xprobe-ext-fab').textContent],
+        ['▾', '☰', '▤', '↩', '◉']);
+      eq('默认折叠只露 ▾ 那颗，其余 display:none',
+        ['ysy-xprobe-ext-fbtn', 'ysy-xprobe-ext-cbtn'].map((i) => by40(i).style.display), ['none', 'none']);
+      H40.fabFoldToggle(); H40.fabBtn();
+      eq('点 ▾ 展开 ⇒ 折叠钮翻成 ▴、业务钮露出来',
+        [by40('ysy-xprobe-ext-foldbtn').textContent, by40('ysy-xprobe-ext-fbtn').style.display], ['▴', 'flex']);
+
+      // 关掉「关」那颗：display:none（flex 里不占Layout 位），别的钮顺序不受影响
+      const r40 = H40.setFabVis('ysy-xprobe-ext-fbtn', false);
+      eq('关掉「关」⇒ 命令成功、那颗 display:none（不占位）、配置落库 false',
+        [r40.ok, by40('ysy-xprobe-ext-fbtn').style.display, store['ysy.xprobe.fabvis']['ysy-xprobe-ext-fbtn']],
+        [true, 'none', false]);
+      eq('关掉一颗不牵连别的：榜/回仍 flex、分隔线仍在',
+        [by40('ysy-xprobe-ext-cbtn').style.display, by40('ysy-xprobe-ext-rbtn').style.display,
+          by40('ysy-xprobe-ext-sep').style.display], ['flex', 'flex', 'flex']);
+      // 正向对照：开回来当场长回原处；折叠钮拒绝关闭
+      H40.setFabVis('ysy-xprobe-ext-fbtn', true);
+      eq('勾选回来 ⇒ 当场恢复 flex、配置键清掉（默认显）',
+        [by40('ysy-xprobe-ext-fbtn').style.display, store['ysy.xprobe.fabvis']['ysy-xprobe-ext-fbtn']], ['flex', undefined]);
+      const rf40 = H40.setFabVis('ysy-xprobe-ext-foldbtn', false);
+      eq('折叠钮不可关（关了就展不开）⇒ 拒绝、九颗都还在',
+        [rf40.ok, !!by40('ysy-xprobe-ext-foldbtn')], [false, true]);
+      // 关掉「观」⇒ 分隔线跟着藏，不留一道孤线
+      H40.setFabVis('ysy-xprobe-ext-fab', false);
+      eq('关掉「观」⇒ 分隔线也藏（不留孤线）',
+        [by40('ysy-xprobe-ext-fab').style.display, by40('ysy-xprobe-ext-sep').style.display], ['none', 'none']);
+
+      console.log('[40] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
+    }
+
+    // ================= [41] v0.12.10 关系标签搬进 badge 盒子 + 关注百分比收进悬浮弹卡 =================
+    {
+      const passBase = pass;
+      console.log('\n[41] v0.12.10 关系标签挪到拉黑后 / 百分比进悬浮弹窗 / 弹窗显示关注事件');
+      const core41 = rd('content/core.js');
+      const H = { badgePaint: null };
+      // A. 源码针脚
+      ok('badgePaint 收 rel 参数、关系标签住进盒子（data-role=rel）、绑悬浮；关系判不出给空白占位盒（data-role=ph）、行内不画百分比、拉黑钮已迁出',
+        /function badgePaint\(n, h, nameTxt, bad, form, rt, rel\)/.test(core41)
+        && /lb\.setAttribute\('data-role', 'rel'\)/.test(core41)
+        && /ph\.setAttribute\('data-role', 'ph'\)/.test(core41)
+        && /bindRelBadgeHover\(n, h\)/.test(core41)
+        && !/else if \(rt\) \{\s*\/\/ 关系判不出/.test(core41), '');
+      ok('悬浮绑定不再要求关系标签存在：空白 badge 也能弹窗（去掉 if(!relChipEl2)return）、弹窗含拉黑钮',
+        /function bindRelBadgeHover\(badge, h\)[\s\S]{0,1200}relBadgePopShow\(badge, h, rel\)/.test(core41)
+        && !/if \(!relChipEl2\) return;/.test(core41)
+        && /'拉黑 @' \+ h\)/.test(core41) && /'取消拉黑 @' \+ h\)/.test(core41), '');
+      ok('悬浮弹卡按关系分三段：互关给 我关注TA/TA关注我/互关时间，他单向给 TA关注我/已关注我，我单向给 我关注TA/未回关；判不出才退 关注事件',
+        /function relBadgeRows\(h, rel\)/.test(core41)
+        && /key === 'mutual'/.test(core41)
+        && /'互关时间'/.test(core41)
+        && /key === 'them'/.test(core41)
+        && /'TA 关注我'/.test(core41)
+        && /key === 'me'/.test(core41)
+        && /'未回关'/.test(core41), '');
+      ok('清场纪律：badgeSweep 调 relBadgeSweep 摘弹卡（关闸/切页不留半空）',
+        /n \+= relBadgeSweep\(\)/.test(core41), '');
+      ok('RL-30 未破：关系标签写进 badge 仍走 renderBlocks 的节拍与静默窗，无新定时器/观察器',
+        !/relBadge[\s\S]{0,400}setInterval/.test(core41)
+        && !/relBadge[\s\S]{0,400}MutationObserver/.test(core41), '');
+
+      // B. 行为：沙箱造一行「我关注 TA、TA 没回关、有粉丝数」，验证标签住 badge + 弹卡内容
+      const root41 = h('div', {}, [tweetCell('reltest', '9501', new Date(Date.now() - 5 * 3600000).toISOString(), '甲帖', { followTestid: '95011-unfollow' })]);
+      const rel41 = run(root41, '/home', 'https://x.com/home');
+      const X41 = rel41.__xprobe;
+      // 几何：给整行/名字/时间摆出一条宽缝，badgePick 才挂得住（否则判「放不下」一颗不出）
+      const art41 = root41.querySelector('article'), row41 = root41.querySelector('[data-testid="User-Name"]');
+      const tm41 = root41.querySelector('time');
+      [root41, art41, row41].forEach((n) => { n.__geo = { left: 0, top: 0, width: 400, height: 18 }; });
+      tm41.__geo = { left: 60, top: 0, width: 24, height: 18 };
+      const g41 = X41.getUsers();
+      g41.reltest = { handle: 'reltest', following: 96, followers: 100, statsAt: Date.now(),
+        relation: 'following', seenAs: { following: new Date(Date.now() - 10 * 86400000).toISOString() } };
+      // 互关/他单向 fixture：两侧的本地可读时间都在（我关注 10 天前、TA 进粉丝列表 20 天前）
+      g41.mut = { handle: 'mut', following: 96, followers: 100, statsAt: Date.now(),
+        relation: 'following', seenAs: { following: new Date(Date.now() - 10 * 86400000).toISOString(),
+          followers: new Date(Date.now() - 20 * 86400000).toISOString() } };
+      // flSeen=true：台账里有人出现在粉丝列表 ⇒ relVerdict 才敢用「列表里没见到 TA」判「我单向」
+      g41.seen_fan = { handle: 'seen_fan', seenAs: { followers: new Date().toISOString() } };
+      X41.setBadgeOn(true);   // page 徽标总闸（前面的用例可能关过），显式开
+      X41.renderBlocks(true);
+      const badge41 = rel41.document.querySelector('[data-xprobe="blk"][data-h="reltest"]');
+      const chip41 = badge41 && badge41.querySelector('[data-xprobe="rel"]');
+      eq('关系标签住进 badge 盒子（单 child=rel 标签、无行内拉黑钮、无行内百分比）',
+        [!!chip41, chip41 && chip41.getAttribute('data-role'),
+          badge41.children.length, badge41.querySelector('button') === null,
+          badge41.textContent.indexOf('%') < 0], [true, 'rel', 1, true, true]);
+      // 弹卡行（我单向）：关注百分比 96%、我关注 TA 有日期、未回关 10 天；不再写「关注事件/事件来源」混进互关
+      const rows41 = X41.relBadgeRows('reltest', { key: 'me', lab: '我单向', tip: '' });
+      const kv41 = (k) => (rows41.filter((r) => r[0] === k)[0] || [])[1];
+      ok('弹卡（我单向）：关注百分比 96%、我关注 TA 是日期、未回关 10 天、无「关注事件」行',
+        kv41('关注百分比').indexOf('96%（96/100）') === 0
+        && /^\d{4}-\d{2}-\d{2}$/.test(kv41('我关注 TA') || '')
+        && kv41('未回关').indexOf('10 天') === 0
+        && !rows41.some((r) => r[0] === '关注事件'), rows41);
+      // 弹卡（互关）：给 我关注 TA / TA 关注我 / 互关时间 三段，绝不写「未回关」（修截图的互关误报）
+      const rowsMu = X41.relBadgeRows('mut', { key: 'mutual', lab: '互关', tip: '' });
+      const kvMu = (k) => (rowsMu.filter((r) => r[0] === k)[0] || [])[1];
+      ok('弹卡（互关）：三段 我关注TA / TA关注我 / 互关时间 都是日期、且不含「未回关」一行',
+        /^\d{4}-\d{2}-\d{2}$/.test(kvMu('我关注 TA') || '')
+        && /^\d{4}-\d{2}-\d{2}$/.test(kvMu('TA 关注我') || '')
+        && /^\d{4}-\d{2}-\d{2}$/.test(kvMu('互关时间') || '')
+        && !rowsMu.some((r) => r[0] === '未回关'), rowsMu);
+      // 弹卡（他单向）：TA 关注我 有日期 + 已关注我 N 天（差异）
+      const rowsTh = X41.relBadgeRows('mut', { key: 'them', lab: '他单向', tip: '' });
+      const kvTh = (k) => (rowsTh.filter((r) => r[0] === k)[0] || [])[1];
+      ok('弹卡（他单向）：TA 关注我 有日期 + 已关注我差异天数',
+        /^\d{4}-\d{2}-\d{2}$/.test(kvTh('TA 关注我') || '')
+        && kvTh('已关注我').indexOf('天（TA 关注我、你还没回关）') > 0, rowsTh);
+      // 悬浮：弹卡挂 documentElement、含「我关注 TA」字样、含拉黑钮、移开后收起
+      X41.relBadgePopShow(badge41, 'reltest', { key: 'me', lab: '我单向', tip: '' });
+      const pop41 = X41.__relPop();
+      ok('悬浮弹卡挂 documentElement（自家节点，data-xprobe=relpop）、含「我关注 TA」字样',
+        pop41.on && /我关注 TA/.test(pop41.text) && /96%/.test(pop41.text), pop41);
+      // 弹窗里的拉黑钮（拉黑钮已从行内迁到这里）：点它不直接触发（沙箱不真点），但节点与字面要对
+      const blkBtn41 = rel41.document.getElementById('ysy-xprobe-ext-relpop');
+      const blkBtn41El = blkBtn41 && blkBtn41.querySelector('button');
+      ok('悬浮弹窗含拉黑钮（@reltest，行内拉黑钮已迁此）：节点存在、字面带 handle',
+        !!blkBtn41El && /拉黑 @reltest/.test(blkBtn41El.textContent), blkBtn41El && blkBtn41El.textContent);
+      X41.relBadgePopHide();
+      rel41.__runTimers(2);
+      eq('移开约 200ms 后弹卡收起（不留在半空）', X41.__relPop().on, false);
+      // 关系判不出（空白）：badge 仍给一枚空白占位盒、无拉黑钮行内、无百分比，保证可悬浮拉黑
+      const phNode = rel41.document.createElement('span');
+      X41.badgePaint(phNode, 'stranger', '陌生人', false, 'full', null, null);
+      const phChild = phNode.querySelector('[data-role="ph"]');
+      ok('空白状态（关系判不出）：badge 给一枚空白占位盒（data-role=ph），无行内拉黑钮、无百分比',
+        !!phChild && phNode.querySelector('button') === null && phNode.textContent.indexOf('%') < 0, phNode.outerHTML.slice(0, 240));
+      // 空白 badge 悬浮也弹窗（关系：—）且含「拉黑」钮 —— 不丢拉黑入口
+      X41.relBadgePopShow(phNode, 'stranger', null);
+      const popPh = X41.__relPop();
+      ok('空白 badge 悬浮弹窗也含「拉黑」钮（关系：—），空白状态不丢拉黑入口',
+        popPh.on && /关系/.test(popPh.text) && /拉黑 @stranger/.test(popPh.text), popPh);
+      X41.relBadgePopHide();
+      rel41.__runTimers(2);
+      eq('空白 badge 弹窗也收起', X41.__relPop().on, false);
+      // 正向对照：台账没粉丝数 ⇒ 弹卡如实写「本机没有」，不编百分比
+      const rowsNo41 = X41.relBadgeRows('nobody41', { key: 'me', lab: '我单向', tip: '' });
+      eq('正向对照：没粉丝数 ⇒ 弹卡百分比栏是「—」不编数（RL-11）',
+        (rowsNo41.filter((r) => r[0] === '关注百分比')[0] || [])[1], '—');
+      // 清场：relBadgeSweep 摘掉弹卡
+      X41.relBadgePopShow(badge41, 'reltest', { key: 'me', lab: '我单向', tip: '' });
+      X41.relBadgeSweep();
+      eq('关闸清场摘干净：弹卡节点没了', X41.__relPop().on, false);
+
+      // v0.12.12 手机关注初始化：我关注但起算日 unknown ⇒ 种成加载时，未回关从 0 天起算
+      // 造一个「我关注 TA、但本机没记到关注时间」的人（无 seenAs.following、无 firstSeenAt）
+      g41.mefollow_unknown = { handle: 'mefollow_unknown', relation: 'following' };
+      const seeded = X41.ensureFollowSeed('mefollow_unknown');
+      const fsU = X41.followStartAt('mefollow_unknown');
+      ok('手机关注初始化：ensureFollowSeed 把 unknown 起算日种成加载时（followStartAt 不再 null）',
+        seeded === true && !!fsU && fsU.ms > 0, [seeded, fsU]);
+      // 幂等：已种过就不再重复种（followStartAt 仍是同一时刻，不回退成 null）
+      ok('幂等：第二次 ensureFollowSeed 不再改变已种好的起算日',
+        X41.ensureFollowSeed('mefollow_unknown') === false && !!X41.followStartAt('mefollow_unknown'), '');
+      const rowsU = X41.relBadgeRows('mefollow_unknown', { key: 'me', lab: '我单向', tip: '' });
+      const kvU = (k) => (rowsU.filter((r) => r[0] === k)[0] || [])[1];
+      ok('弹卡（手机关注初始化后）：未回关 0 天（从加载时算起），不再「本机没记到起算日」',
+        kvU('未回关').indexOf('0 天') === 0, rowsU);
+      // 反向对照：已有 seenAs.following 真实记录的人，ensureFollowSeed 不动它的起算日（守 RL-11 不编旧数）
+      const fsBefore = X41.followStartAt('reltest').day;
+      X41.ensureFollowSeed('reltest');
+      eq('反向对照：已有真实关注时间的人，ensureFollowSeed 不覆盖（不把 10 天改写成现在）',
+        X41.followStartAt('reltest').day, fsBefore);
+
+      console.log('[41] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
+    }
+
+  console.log('\n[42] v0.12.13 工作台（art-032 dashboard.html）：数据源二选一 / 版本戳 / 零出口');
+  {
+    const src42 = dSrc;   // v0.12.17：判据咬公共壳 + 六个页面脚本拼起来的全文
+    const clean42 = src42.replace(/^\s*\/\/.*$/gm, '');   // 咬代码不咬注释：注释里提旧名字是叙事，不是死绑定
+    const panel42 = rd('ui/sidepanel.js').replace(/^\s*\/\/.*$/gm, '');
+    const dHtml42 = rd('ui/dashboard.html');
+    const sw42 = rd('background/sw.js').replace(/^\s*\/\/.*$/gm, '');   // v0.12.15：云端档枚举/登录在 SW，判据咬它
+    const ver42 = JSON.parse(fs.readFileSync(path.join(__dirname, 'extension', 'manifest.json'), 'utf8')).version;
+    const coreSrc42 = rd('content/core.js');
+    const build42 = (coreSrc42.match(/const BUILD = '([^']+)'/) || [])[1];
+    const dashBuild42 = (clean42.match(/const DASH_BUILD = '([^']+)'/) || [])[1];
+    const panelBuild42 = (panel42.match(/const PANEL_BUILD = '([^']+)'/) || [])[1];
+    const kitBuild42 = (rd('ui/kit.js').match(/const KIT_BUILD = '([^']+)'/) || [])[1];
+    ok('版本戳六处一致（v0.12.14 起 kit 入列）：manifest.version == core VER、core BUILD == PANEL_BUILD == DASH_BUILD == KIT_BUILD',
+      ver42 === (coreSrc42.match(/const VER = '([^']+)'/) || [])[1] &&
+      !!build42 && build42 === panelBuild42 && build42 === dashBuild42 && build42 === kitBuild42, [ver42, build42, panelBuild42, dashBuild42, kitBuild42]);
+    ok('v0.12.17 三个 baseURL 纪律：页面没有地址输入框，qRead 的 base 只来自 SW dashConf 回包与本地 sink 常量；SW 只有一套 CLOUD_ENVS（prod=zhishu / dev=localhost:3100），boot4 的 api2 与 28081 在 SW 与清单里全部退场',
+      /id="dGoUrl"/.test(dHtml42) === false && /id="dGoSet"/.test(dHtml42) === false &&
+      /const base = cloud \? \(\(dashConf_ && dashConf_\.base\) \|\| ''\) : DASH_LOCAL_BASE;/.test(clean42) &&
+      /base: 'https:\/\/zhishu\.mingzhang\.cc'/.test(sw42 || '') && /base: 'http:\/\/localhost:3100'/.test(sw42 || '') &&
+      /const DASH_CLOUD_ENVS = \{/.test(sw42 || '') === false && /if \(!CLOUD_ENVS\[want\]\)/.test(sw42 || '') &&
+      /地址写死在代码里，填不进别的地址/.test(sw42 || '') &&
+      /api2\.mingzhang\.cc|127\.0\.0\.1:28081/.test(sw42 || '') === false, '');
+    ok('整页唯一 fetch 在 qRead（v0.12.15）：POST /api/xprobe/{name} 同形读口（RL-33），credentials omit；全页没有指向 x.com 的 URL 字面量',
+      (clean42.match(/fetch\(/g) || []).length === 1 &&
+      /function qRead\(name, bodyObj\)/.test(clean42) &&
+      /method: 'POST'/.test(clean42) && /'\/api\/xprobe\/' \+ name/.test(clean42) &&
+      /credentials: 'omit'/.test(clean42) &&
+      !/['"]https?:\/\/[^'"]*x\.com/.test(clean42), '');
+    ok('v0.12.17 数据源与档位落 chrome.storage（dashSrc 在页面；档位 CLOUD_ENV_KEY 与 token 账 CLOUD_KEY 共用一套，boot4 退役后不再有第二本）；切源/切档都清缓存重读',
+      /'ysy\.xprobe\.dashSrc'/.test(clean42) && /const CLOUD_ENV_KEY = 'ysy\.xprobe\.cloudEnv'/.test(sw42 || '') &&
+      /function dashConf\(\)[\s\S]{0,160}cloudConf\(\)/.test(sw42 || '') &&
+      /db = null; dbAt = 0;/.test(clean42), '');
+    ok('RL-33 对齐一版清单两边同形（同名 POST 端点、参数名一致）：sink 的 XPROBE_READ_ROUTES 与工作台的 CLOUD_MAP 咬同一组名字，云端没有的如实报「云端暂无」',
+      /"library\/accounts": \("accounts", False\)/.test(fs.readFileSync(path.join(__dirname, 'log-sink.py'), 'utf8')) &&
+      /"library\/posts": \("author_posts", True\)/.test(fs.readFileSync(path.join(__dirname, 'log-sink.py'), 'utf8')) &&
+      /"me\/days": \("day_rows", False\)/.test(fs.readFileSync(path.join(__dirname, 'log-sink.py'), 'utf8')) &&
+      /"me\/following": \("follow_starts", False\)/.test(fs.readFileSync(path.join(__dirname, 'log-sink.py'), 'utf8')) &&
+      /accounts: \{ name: 'library\/accounts'/.test(clean42) &&
+      /follow_starts: \{ name: 'me\/following'/.test(clean42) &&
+      /day_rows: \{ name: 'me\/days'/.test(clean42) &&
+      /author_posts: \{ name: 'library\/posts'/.test(clean42) &&
+      /云端暂无：' \+ q/.test(clean42) && /API-CONTRACT/.test(clean42) &&
+      /rows: \[\], via: 'cloud'/.test(clean42), '');   // v0.12.18：文案点名查询、失败也把通道带回去
+    ok('v0.12.17 设置独立页：TABS 含 set、set.html 载 page-set.js、register(set) 渲染设置区；六页头部都没有 dSrcSeg/dEnvSeg/dLogin（归设置页）',
+      /key: 'set', file: 'set\.html'/.test(clean42) &&
+      rd('ui/dash/set.html').indexOf('page-set.js') >= 0 &&
+      /D\.register\('set'/.test(rd('ui/dash/page-set.js')) &&
+      DASH_PAGES.every((k) => /id="dSrcSeg"|id="dEnvSeg"|id="dLogin"/.test(rd('ui/dash/' + k + '.html')) === false), '');
+    ok('v0.12.16 默认云端线上（用户口径）：存储没写过时 dashSrc 落 cloud；切源/切档/退出登录一律 askConfirm 二次确认（confirmModalNode 三张弹窗之一，Esc 各归各）',
+      /o\['ysy\.xprobe\.dashSrc'\] === 'db'\) \? 'db' : 'cloud'/.test(clean42) &&
+      /function askConfirm\(what, to, note\)/.test(clean42) &&
+      /what === 'src'/.test(clean42) && /what === 'env'/.test(clean42) && /what === 'logout'/.test(clean42) &&
+      /if \(confirm_\) \{ confirm_ = null; render\(\); return; \}/.test(clean42), '');
+    ok('v0.12.16 登录成功给明示（用户报「没提示我成功」）：srcNote 写邮箱与档位，不再悄悄关弹窗',
+      /云端已登录：' \+ \(\(dashConf_ && dashConf_\.email\)/.test(clean42), '');
+    ok('RL-11 缺数不编：KPI 没数写 —、qRead 失败返回 err + 空 rows，不画 0 假装有；云端档未登录明说去登录',
+      /fbNo == null \? '—'/.test(clean42) && /云端没连上：/.test(clean42) && /本机 sink 没连上：/.test(clean42) &&
+      /needLogin: true/.test(clean42), '');
+    ok('kit 接线（v0.12.17 拆页后七份 html）：面板 + 六个工作台页都先载 kit.js，公共壳只 create 一次，页面差异全在 register() 里',
+      rd('ui/sidepanel.html').indexOf('<script src="kit.js">') >= 0 &&
+      DASH_PAGES.every((k) => rd('ui/dash/' + k + '.html').indexOf('<script src="../kit.js">') >= 0) &&
+      DASH_PAGES.every((k) => /D\.register\('/.test(rd('ui/dash/page-' + k + '.js'))) &&
+      /create\(\{ pageLabel: '面板', render: render, fetchDb: fetchDb, one: null/.test(panel42) &&
+      /create\(\{ pageLabel: '工作台', render: render, fetchDb: fetchDb, one: one/.test(clean42), '');
+    ok('面板工作台入口：bWorkbench 用 chrome.tabs.create 开自家扩展页（不用 window.open 弹窗、manifest 不加条目）',
+      /bWorkbench: \(\) => \{[\s\S]{0,300}chrome\.tabs\.create\(\{ url: chrome\.runtime\.getURL\('ui\/dashboard\.html'\) \}\)/.test(panel42), '');
+    // ---------- v0.12.17 规范红线（RL-33 契约 / RL-34 拆页） ----------
+    const contractDoc = fs.readFileSync(path.join(__dirname, 'skills', 'docs', 'API-CONTRACT.md'), 'utf8');
+    const sinkRoutes = fs.readFileSync(path.join(__dirname, 'log-sink.py'), 'utf8');
+    const goRoutesPath = path.join(__dirname, '..', 'zhishu', 'api', 'internal', 'httpapi', 'x_routes.go');
+    const goRoutes = fs.existsSync(goRoutesPath) ? fs.readFileSync(goRoutesPath, 'utf8') : '';
+    const contractNames = ['library/accounts', 'library/posts', 'me/days', 'me/following'];
+    ok('RL-33 契约四处一致（改 URL/参数必须同步改两处实现）：sink 路由表 / 工作台 CLOUD_MAP / 契约清单 / 同级 zhishu 的 Go 路由（存在时）都咬同一组 4 个端点名；3 个 baseURL 之外没有第四个',
+      contractNames.every((n) =>
+        sinkRoutes.indexOf('"' + n + '": (') >= 0 && clean42.indexOf("name: '" + n + "'") >= 0 &&
+        contractDoc.indexOf('/api/xprobe/' + n) >= 0 &&
+        (goRoutes === '' || goRoutes.indexOf('/api/xprobe/' + n) >= 0)) &&
+      /base: 'https:\/\/zhishu\.mingzhang\.cc'/.test(sw42) && /base: 'http:\/\/localhost:3100'/.test(sw42) &&
+      /DASH_LOCAL_BASE = 'http:\/\/127\.0\.0\.1:8765'/.test(clean42) &&
+      /api2\.mingzhang\.cc|127\.0\.0\.1:28081/.test(sw42 + clean42) === false,
+      [contractNames.filter((n) => sinkRoutes.indexOf('"' + n + '": (') < 0), goRoutes === '' ? 'Go 仓库未检出' : 'Go 路由已核对']);
+    // ---------- v0.12.19 决策4-① / 决策3A·C（RL-35 结构红线） ----------
+    const dbParity = fs.readFileSync(path.join(__dirname, 'skills', 'docs', 'DB-PARITY.md'), 'utf8');
+    ok('决策4-①（v0.12.19）：posts_top 对齐到 space/posts（纯前端映射、不进 sink），CLOUD_MAP 含 posts_top 且 Go 路由 xSpacePosts 在（存在时）',
+      /posts_top: \{ name: 'space\/posts'/.test(clean42) &&
+      (goRoutes === '' || goRoutes.indexOf('/api/xprobe/space/posts') >= 0), '');
+    ok('决策3C（v0.12.19）：posts_growth/tl_days/tl_rank 云端不采集，CLOUD_NO 点名差异（不谎称「下一版对齐」、不冒充本地数据）',
+      /posts_growth: 'PG 未存帖子按小时增速序列/.test(clean42) &&
+      /tl_days: 'PG 未存时间线分源/.test(clean42) &&
+      /'云端不采集：' \+ why\[q\]/.test(clean42), '');
+    ok('RL-35（v0.12.19 决策3A）：API-CONTRACT 含 RL-35 红线、DB-PARITY.md 含 5 张 x_observe 表段、点名「本地 day_rows 无 user_id 列、user_id 由 Go 注入」',
+      /RL-35/.test(contractDoc) &&
+      fs.existsSync(path.join(__dirname, 'skills', 'docs', 'DB-PARITY.md')) &&
+      dbParity.split('## 表：').length >= 6 &&
+      /本地 day_rows 没有 user_id 列/.test(dbParity), '');
+    const linesOf = (p) => fs.readFileSync(path.join(__dirname, 'extension', p), 'utf8').split('\n').length;
+    ok('RL-34 拆页与长度上限：六个 HTML 都有页头 tab 容器、六个页面脚本各 <160 行、公共壳 500–1500 行（硬上限 1500）、页签 renderTabs 生成本页 <a href>',
+      DASH_PAGES.length === 6 &&
+      DASH_PAGES.every((k) => rd('ui/dash/' + k + '.html').indexOf('id="dTabs"') >= 0) &&
+      DASH_PAGES.every((k) => linesOf('ui/dash/page-' + k + '.js') < 160) &&
+      linesOf('ui/dashboard.js') < 1500 &&
+      /a\.href = t\.file;/.test(clean42) &&
+      /function renderTabs\(\)/.test(clean42), '');
+  }
+
+  // ---------- [43] grid 分流（2026-11-13 真机「广场读回 50 人但页面不出表」） ----------
+  // 真机现象：状态行写着「通道 云端 · 读回 账号 50 人 / 帖子 50 条 · 259ms」，可两张榜下面
+  // 只有一句被 CSS 截断的「云端库…」，一行数据都没有。
+  // 真因：view.js 的 dbTable 把 cards 写成 `o.cards || []` —— **空数组是 truthy**，
+  // 于是账号榜/帖子榜（本来不传 cards）也带着 cards:[] 进 kit.js 的 gridNode，
+  // 被 `if (m.cards)` 判成「卡片榜」→ 走卡片分支 → head/rows 一行都不画，只剩空态那句。
+  // 数据一直在、也一直在 200ms 内读回来了，是渲染分流把表吃掉了。
+  //
+  // 判据不咬源码、咬行为：真跑一遍 view.js 的 plazaLines + kit.js 的 appendSafe，
+  // 看画出来的 DOM 里到底有没有表头和数据行。
+  {
+    const sb43 = { console, Date, Math, JSON, Object, Array, String, Number, setTimeout, clearTimeout };
+    sb43.globalThis = sb43; sb43.self = sb43;
+    sb43.document = {
+      createElement: (t) => new El(t),
+      createElementNS: (n, t) => new El(t),
+      getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
+      addEventListener: () => {},
+      documentElement: new El('html'),
+      body: new El('body'),
+    };
+    sb43.navigator = { userAgent: 'node' };
+    sb43.window = sb43;
+    vm.createContext(sb43);
+    vm.runInContext(rd('ui/kit.js'), sb43, { filename: 'kit.js' });
+    vm.runInContext(rd('ui/view.js'), sb43, { filename: 'view.js' });
+    const K43 = sb43.XPROBE_KIT.create({ pageLabel: '工作台', render: () => {}, fetchDb: null, one: null, getSt: () => null });
+    const V43 = sb43.XPROBE_VIEW;
+    const acct43 = [{ handle: 'alice', name: 'A', views: 900, eng: 12, fans: 30, postsN: 4, posts_n: 4, own: 0, relation: '', relation_at: null, last_post_at: null, day: null, exposure: null, effective: null, token: null, seen_at: null, blocked: 0, blocked_at: null }];
+    const post43 = [{ tweet_id: '1', author: 'alice', text: 'hi', last_at: null, view: 900, eng: 12, eng_rate: null, like_rate: null, view_gain: null, hours: null, view_per_h: null, points: null }];
+    const db43 = {
+      at: Date.now(), ms: 12, via: 'cloud', id: 'x',
+      acct: { ok: true, rows: acct43 }, post: { ok: true, rows: post43 },
+      followStarts: { ok: true, rows: [] }, tlDays: { ok: false, rows: [], err: '' },
+      tl: { ok: false, rows: [], err: '云端不采集：PG 未存时间线分源榜单' },
+    };
+    const st43 = { series: { own: 'me', handles: [{ h: 'me', own: true, imp: 0, min: 0 }], key: 'me' } };
+    const lines43 = V43.plazaLines(st43, { now: Date.now(), db: db43, acct: 'views', post: 'view', acctLimit: 10, postLimit: 10, tlDay: '', tlSrcf: '', tlLimit: 10, tlSort: 'view' });
+    const grid43 = lines43.filter((m) => m.k === 'grid');
+    const root43 = new El('div');
+    K43.appendSafe(root43, lines43);
+    const html43 = root43.outerHTML;
+    ok('grid 分流（2026-11-13）：不带 cards 的榜（账号/帖子）不得带 truthy 的空数组 —— 空数组会让 kit.js 走卡片分支、把 rows 整张吃掉',
+      grid43.length >= 2 && grid43.slice(0, 2).every((g) => !g.cards) && grid43[0].rows.length === 1,
+      grid43.map((g) => (g.cards ? 'cards=' + JSON.stringify(g.cards) : 'cards=' + String(g.cards))));
+    ok('grid 分流（2026-11-13）：账号榜/帖子榜画出来要有表头和数据行（真机症状：读回 50 人但页面只剩一句「云端库…」）',
+      /名次/.test(html43) && /@alice/.test(html43) && /900/.test(html43) && /还没有账号数据/.test(html43) === false,
+      html43.slice(0, 400));
+  }
+
+  // ---------- [44] 工作台改版（2026-11-13 用户报「帖子太丑、顶部菜单太难看、布局乱」） ----------
+  // 依据是用户自己那套前端 skill 集合（D:\code\yunxiao\ysy-new\skills）：
+  //   FE-1/2 只依赖语义令牌、FE-11 禁横向滚动、FE-17 一个容器一层卡（用分隔线不用一堆边框）、
+  //   FE-33 数据表格统一、FE-40 Calm 全局统一主题（单一强调色）、FE-41 尺度层收敛（改一层不改调用点）、
+  //   FE-46 行向 flex 子项必须 min-w-0；外加本仓 skills/docs/UIX.md 的 D-1/D-8/D-9/D-12。
+  //
+  // 判据分两头：① 顶菜单那条「样式整条失效」的坑必须钉住（v0.12.17 把页签从 button 改成 <a href>，
+  //   CSS 还只写 #dTabs button ⇒ 页面显示成浏览器默认链接，这就是「顶部菜单太难看」的实因）；
+  //   ② 版式判据（卡片化、列宽、令牌、标题/副信息分家）钉住，别下一轮又退回一堵墙。
+  {
+    const dashCss44 = rd('ui/dashboard.css');
+    const sideCss44 = rd('ui/sidepanel.css');
+    const view44 = rd('ui/view.js');
+    const kit44 = rd('ui/kit.js');
+    const clean44 = dashCss44.replace(/^\s*\/\/.*$/gm, '');
+    const dashJs44 = rd('ui/dashboard.js').replace(/^\s*\/\/.*$/gm, '');
+
+    ok('工作台顶部菜单（v0.12.21）：页签是 <a href>，样式必须按 a 写（只写 button ⇒ 整条失效、显示成浏览器默认链接）',
+      /#dTabs a\s*\{/.test(clean44) && /#dTabs button\s*\{/.test(clean44) === false &&
+      /createElement\('a'\)/.test(dashJs44), 'dashboard.css 的 #dTabs 规则与 dashboard.js 的页签元素类型对不上');
+
+    ok('工作台版式（v0.12.21）：两张榜各一张卡（FE-17 一个容器一层卡）+ 通道状态条单独皮肤（D-9）+ 撤掉 #report 每行一条上边框的「一堵墙」',
+      /body\.dash \.imps\.dbgrid\s*\{/.test(clean44) &&
+      /body\.dash \.row\.dChan/.test(clean44) &&
+      /body\.dash #report > div\s*\{[^}]*border-top:\s*0/.test(clean44), '');
+
+    ok('工作台版式（v0.12.21）：表格列宽按宽屏重算（面板的 42px 窄列在 1240px 工作台里会把 handle 截成「@miles_…」）',
+      /body\.dash \.dbgrid\.acct/.test(clean44) && /body\.dash \.dbgrid\.post/.test(clean44) &&
+      /min-width:\s*0/.test(clean44), '');
+
+    ok('令牌层（FE-1/2/41）：--acc-dim 等补进 :root，dashboard.css 不许再留裸 hex 兜底；顺带修掉「主色是绿的、兜底却是蓝的」那个色差',
+      /--acc-dim\s*:/.test(sideCss44) && /--radius\s*:/.test(sideCss44) &&
+      /var\(--[a-z-]+,\s*#[0-9a-fA-F]{3,8}\)/.test(clean44) === false,
+      (clean44.match(/var\(--[a-z-]+,\s*#[0-9a-fA-F]{3,8}\)/g) || []).slice(0, 3));
+
+    ok('标题与副信息分家（v0.12.21）：榜头左标题右副信息（本次读回 N 人），窄面板那边副信息另起一行',
+      /capMeta/.test(view44) && /capMeta/.test(kit44) &&
+      /\.imps \.cap \.capMeta/.test(sideCss44) && /\.cap \.capMeta/.test(clean44), '');
+
+    // 行为级：真渲染一遍，卡头必须同时有标题和副信息（拆家拆丢了也要能判红）
+    const sb44 = { console, Date, Math, JSON, Object, Array, String, Number, setTimeout, clearTimeout };
+    sb44.globalThis = sb44; sb44.self = sb44;
+    sb44.document = {
+      createElement: (t) => new El(t), createElementNS: (n, t) => new El(t),
+      getElementById: () => null, querySelector: () => null, querySelectorAll: () => [],
+      addEventListener: () => {}, documentElement: new El('html'), body: new El('body'),
+    };
+    sb44.navigator = { userAgent: 'node' }; sb44.window = sb44;
+    vm.createContext(sb44);
+    vm.runInContext(rd('ui/kit.js'), sb44, { filename: 'kit.js' });
+    vm.runInContext(rd('ui/view.js'), sb44, { filename: 'view.js' });
+    const K44 = sb44.XPROBE_KIT.create({ pageLabel: '工作台', render: () => {}, fetchDb: null, one: null, getSt: () => null });
+    const V44 = sb44.XPROBE_VIEW;
+    const rows44 = [{ handle: 'alice', name: 'A', views: 900, eng: 12, fans: 30, postsN: 4, posts_n: 4, own: 0, relation: '', relation_at: null, last_post_at: null, day: null, exposure: null, effective: null, token: null, seen_at: null, blocked: 0, blocked_at: null }];
+    const db44 = {
+      at: Date.now(), ms: 12, via: 'cloud', id: 'x',
+      acct: { ok: true, rows: rows44 }, post: { ok: true, rows: [] },
+      followStarts: { ok: true, rows: [] }, tlDays: { ok: false, rows: [], err: '' },
+      tl: { ok: false, rows: [], err: '云端不采集：PG 未存时间线分源榜单' },
+    };
+    const st44 = { series: { own: 'me', handles: [{ h: 'me', own: true, imp: 0, min: 0 }], key: 'me' } };
+    const lines44 = V44.plazaLines(st44, { now: Date.now(), db: db44, acct: 'views', post: 'view', acctLimit: 10, postLimit: 10, tlDay: '', tlSrcf: '', tlLimit: 10, tlSort: 'view' });
+    const g44 = lines44.filter((m) => m.k === 'grid')[0] || {};
+    const root44 = new El('div');
+    K44.appendSafe(root44, lines44);
+    const html44 = root44.outerHTML;
+    ok('版式行为（v0.12.21）：真渲染出来的卡头必须左标题右副信息，两样都在',
+      !!g44.capMeta && /本次读回 1 人/.test(g44.capMeta) && /账号排名/.test(html44) && /本次读回 1 人/.test(html44),
+      { capMeta: g44.capMeta, html: html44.slice(0, 260) });
+  }
 })();
 
 // [10] 的标题延后打印：扩展三层（[12]~[16]）是异步的，先等它跑完再排 [10]，输出顺序才是读的段落序

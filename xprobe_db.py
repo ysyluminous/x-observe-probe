@@ -320,6 +320,52 @@ QUERIES = {
                  " FROM user_rows ORDER BY id DESC LIMIT ?",
     "follows": "SELECT at, handle, dir, w15, max15, w24, max24, gap, rapid, cool"
                " FROM follow_events ORDER BY at DESC LIMIT ?",
+    # v0.12.4「关注时间 / 未回关」：一人一行，按**历史首条**主动关注动作排序（用户 11-12 拍板）。
+    # 判定只在这条 SQL 里做一次（RL-22 唯一写者）：面板 / 上送 / 云端都消费同一份结论，不许各写一套。
+    # 四跳同名（RL-26）：at_source / follow_back / suspect 三列到 JS、Go、PostgreSQL、TS 都不改名。
+    # ① ev：每人最早一条 dir='follow'（MIN(at)，ISO 字符串字典序即时间序）；handle 小写归一。
+    # ② u：台账每人最新一行的 relation / seen_as，加 MIN(at) 当「第一次见到 TA」的固化时刻。
+    # ③ 三态：seen_as 里进过 followers/verified_followers ⇒ yes（已回关）；
+    #    seen_as 里进过 following 且本机确实进过粉丝列表（fl.seen=1）⇒ no（明确未回关）；
+    #    其余一律 unknown —— 没读到不等于否定（RL-11），不主动探测（决策 2）。
+    # ④ at_source='event' 用真实动作时间；没有真实事件的存量（手机关注的）用 u.first_seen_at
+    #    并标 estimated：写一次就固化（库里最早那次快照不会变），绝不覆盖真实事件、不冒充真时间。
+    #    只有「我确实关注过」的存量才补（seen_as.following / relation='following'），own=1 的自己不进名单。
+    # ⑤ 排序：真实事件组按时间升序在前，估值组垫底；LIMIT ? 走 query() 的单参通道。
+    "follow_starts": "WITH ev AS ("
+               " SELECT lower(handle) AS handle, MIN(at) AS follow_at,"
+               " MAX(CASE WHEN COALESCE(suspect, 0) = 1 THEN 1 ELSE 0 END) AS suspect"
+               " FROM follow_events WHERE lower(COALESCE(dir, '')) = 'follow'"
+               " AND COALESCE(handle, '') <> '' GROUP BY lower(handle)),"
+               " u AS ("
+               " SELECT lower(s.handle) AS handle, MIN(s.at) AS first_seen_at, MAX(s.own) AS own,"
+               " (SELECT x.relation FROM store_users x WHERE lower(x.handle) = lower(s.handle)"
+               "  ORDER BY x.id DESC LIMIT 1) AS relation,"
+               " (SELECT x.seen_as FROM store_users x WHERE lower(x.handle) = lower(s.handle)"
+               "  ORDER BY x.id DESC LIMIT 1) AS seen_as"
+               " FROM store_users s WHERE COALESCE(s.handle, '') <> '' GROUP BY lower(s.handle)),"
+               " fl AS (SELECT CASE WHEN EXISTS(SELECT 1 FROM store_users g"
+               " WHERE COALESCE(g.seen_as, '') LIKE '%followers%') THEN 1 ELSE 0 END AS seen)"
+               " SELECT handle, follow_at, at_source, suspect, relation, seen_as, follow_back FROM ("
+               " SELECT COALESCE(ev.handle, u.handle) AS handle,"
+               " COALESCE(ev.follow_at, u.first_seen_at) AS follow_at,"
+               " CASE WHEN ev.follow_at IS NOT NULL THEN 'event' ELSE 'estimated' END AS at_source,"
+               " COALESCE(ev.suspect, 0) AS suspect, COALESCE(u.relation, '') AS relation,"
+               " COALESCE(u.seen_as, '') AS seen_as,"
+               " CASE WHEN COALESCE(u.seen_as, '') LIKE '%followers%' THEN 'yes'"
+               " WHEN COALESCE(u.seen_as, '') LIKE '%following%' AND (SELECT seen FROM fl) = 1 THEN 'no'"
+               " ELSE 'unknown' END AS follow_back"
+               " FROM ev LEFT JOIN u ON u.handle = ev.handle"
+               " UNION ALL"
+               " SELECT u.handle, u.first_seen_at, 'estimated', 0, u.relation, u.seen_as,"
+               " CASE WHEN COALESCE(u.seen_as, '') LIKE '%followers%' THEN 'yes'"
+               " WHEN COALESCE(u.seen_as, '') LIKE '%following%' AND (SELECT seen FROM fl) = 1 THEN 'no'"
+               " ELSE 'unknown' END"
+               " FROM u WHERE u.handle NOT IN (SELECT handle FROM ev) AND u.own = 0"
+               " AND (COALESCE(u.seen_as, '') LIKE '%following%'"
+               "      OR lower(COALESCE(u.relation, '')) = 'following'))"
+               " ORDER BY CASE WHEN at_source = 'event' THEN 0 ELSE 1 END,"
+               " follow_at ASC, handle ASC LIMIT ?",
     "trend": "SELECT at, handle, following, followers, exact, reason"
              " FROM stat_points ORDER BY at DESC LIMIT ?",
     "rewards": "SELECT own, day, value, exact, token, at FROM reward_days"

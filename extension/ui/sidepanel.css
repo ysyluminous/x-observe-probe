@@ -6,6 +6,15 @@
   --bg:#0B0F14; --surf:#111820; --surf2:#0D131A; --line:#202A34; --line2:#18212A;
   --ink:#DCE5EC; --dim:#8A98A6; --faint:#7E8A97;
   --acc:#5FD3A0; --acc-bg:#12261E; --amber:#E7B45C; --red:#E8786C; --blue:#74B6E8;
+  /* v0.12.20（2026-11-13 工作台改版）：把散在 dashboard.css 里的裸 hex 收进令牌层
+     （FE-1 只依赖语义令牌 / FE-2 令牌契约 / FE-41 尺度层收敛：改一层，不改调用点）。
+     —— 特别修掉 --acc-dim 那个**蓝色**兜底：主色 --acc 是绿的，兜底却是蓝的，
+        分段控件的选中态一直跟主色对不上眼。 */
+  --acc-dim:rgba(95,211,160,.14); --acc-line:rgba(95,211,160,.38);
+  --bg2:#0D131A; --panel:#111820; --warn:#E7B45C;
+  /* 尺度层：圆角/阴影全站各只留一档（FE-41） */
+  --radius:10px; --radius-sm:6px;
+  --shadow-1:0 1px 2px rgba(0,0,0,.30);
   --sans:"PingFang SC","Microsoft YaHei","HarmonyOS Sans SC",system-ui,sans-serif;
   --mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
 }
@@ -52,6 +61,10 @@ button:hover { color: var(--ink); border-color: #3A4856; background: #141C24; }
 .impRow.impView .giDay { width: 82px; text-align: left; color: #9aa4ad; }
 /* 「编辑 / 收起」开关挂在标题右边——标题那行本来就是它自己的，别再往按钮排里塞 */
 .imps .cap { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+/* v0.12.20：标题右边的副信息（本次读回 N 人 / 榜先出前 10）。面板只有约 400px 宽 ⇒ 副信息另起一行，
+   不跟标题抢同一行（工作台那边是横排一行，见 body.dash .imps.dbgrid .cap .capMeta）。 */
+.imps .cap { flex-wrap: wrap; }
+.imps .cap .capMeta { width: 100%; color: var(--faint); font-size: 11px; line-height: 1.5; }
 .impToggle { flex: none; padding: 0 7px; font-size: 11px; background: #233038; color: #7ec3e8; }
 .impToggle:hover { background: #2b3d47; }
 .impRow.impEdit input[type="number"], .impRow.impEdit input[type="date"] { width: 68px; min-width: 0; padding: 1px 3px; background: #10151b; color: #c9d1d9; border: 1px solid #2b333b; }
@@ -171,8 +184,15 @@ details summary { color: var(--dim); cursor: pointer; }
 details pre { white-space: pre-wrap; word-break: break-all; color: #9aa4ae; margin: 5px 0 0; }
 #foot { color: var(--faint); border-top: 1px solid #22282f; padding-top: 4px; margin-top: 6px; }
 
-/* 视图切换与「我的 / 广场」两页：图是内联 SVG，宽度跟面板走（约 400px 的容器里画，所以 viewBox 缩放而不是定死像素） */
-#viewPick { display: flex; gap: 2px; margin: 0 0 12px; padding: 0 2px; border-bottom: 1px solid var(--line2); }
+/* 视图切换（v0.12.13 art-032 用户裁定）：页签吸底 —— position:fixed 钉在面板底缘，
+   上面一条发丝线与内容分开；工作台入口按钮靠右推。body 加了 padding-bottom 防内容被盖。 */
+#viewPick {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: flex; gap: 2px; margin: 0; padding: 2px 10px calc(2px + env(safe-area-inset-bottom, 0px));
+  border-bottom: none; border-top: 1px solid var(--line2);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
 #viewPick button {
   position: relative; background: none; border: 0; border-radius: 0; color: var(--dim);
   font: 13px var(--sans); padding: 9px 11px 10px;
@@ -180,8 +200,14 @@ details pre { white-space: pre-wrap; word-break: break-all; color: #9aa4ae; marg
 #viewPick button:hover { background: none; border: 0; color: var(--ink); }
 #viewPick button.on { background: none; border: 0; color: var(--ink); font-weight: 600; }
 #viewPick button.on::after {
-  content: ""; position: absolute; left: 9px; right: 9px; bottom: -1px; height: 2px; background: var(--acc);
+  content: ""; position: absolute; left: 9px; right: 9px; bottom: 0; height: 2px; background: var(--acc);
 }
+#viewPick button#bWorkbench {
+  margin-left: auto; color: var(--acc); font-weight: 600;
+  border: 1px solid #2C4A3C; border-radius: 6px; padding: 6px 12px; margin-top: 3px; margin-bottom: 3px;
+}
+#viewPick button#bWorkbench:hover { background: var(--acc-bg); }
+body { padding-bottom: 58px; }
 .chartBox { display: block; }
 .chartTitle { color: #9aa4ae; margin-bottom: 2px; }
 .chartEmpty { color: #e0a33a; }
@@ -234,6 +260,10 @@ details pre { white-space: pre-wrap; word-break: break-all; color: #9aa4ae; marg
    原先这三样挤在一个常驻的 .secDesc 里，一格最长 1585 字 ⇒ 整页像变更日志。 */
 .secHint { color: var(--dim); font-size: 11px; margin-top: 1px; line-height: 1.35; }
 .secFold { display: none; }
+/* v0.12.9 每颗钮的勾选开关：两列紧凑网格，符号 + 中文名，勾掉即摘掉那颗钮 */
+.fabVisGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; padding: 4px 0 2px; }
+.fabVisItem { display: flex; align-items: center; gap: 5px; color: #cfd6dc; font-size: 11px; cursor: pointer; }
+.fabVisItem input { margin: 0; accent-color: #4ec98a; cursor: pointer; }
 .secQ {
   flex: 0 0 auto; width: 15px; height: 15px; padding: 0; border-radius: 8px;
   background: #233038; color: #7ec3e8; font-size: 11px; line-height: 15px; text-align: center;

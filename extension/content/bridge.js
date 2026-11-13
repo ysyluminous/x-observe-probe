@@ -1,4 +1,8 @@
-// X 观测探针 —— 关系读数桥（v0.11.8）。**主世界**（manifest: world=MAIN, document_start）里的一份只读信使。
+// X 观测探针 —— 读数桥（v0.12.7）。**主世界**（manifest: world=MAIN, document_start）里的一份只读信使。
+// v0.12.7：在关系读数之外，增加「帖子精确指标」收割 —— 对译参考插件 X Viral Monitor 1.18.17 的
+// extractTweetData + tweetDataStore：从 X 自己 GraphQL 回包的 tweet_results.result 取 views.count 与
+// legacy.favorite_count / retweet_count / reply_count / bookmark_count / created_at（精确整数），按 tid
+// 对齐缓存，推广帖剔除。仍走同一条 fetch/XHR 只读旁听通道，不发包、不换响应、无常驻定时器。
 // 为什么必须有它：X 把每个作者的关系读数（following = 我关注 TA，followed_by = TA 关注你）随时间线/列表
 // 一起带回页面，但它们不在 DOM 字面上 —— 住在两类「页面自己的 JS 对象」里：React 组件树（DOM 节点的
 // `__reactFiber$*` 属性）与 X 自己的 Redux store（`entities.users`，挂在 `#react-root` 的 `__reactProps$`
@@ -110,6 +114,54 @@
     };
     walk(v0, 0);
   }
+  // ===== v0.12.7 帖子精确指标：对译参考插件 extractTweetData / tweetDataStore =====
+  // 从一条「帖子结果」形状取精确读数。X 回包里 views.count 是字符串（'296'）、legacy.* 是整数；
+  // 必须 views.state === 'EnabledWithCount' 才算有效（参考插件同款闸门：无浏览数计数就不认，
+  // 不拿 0 冒充）。推广帖（legacy.promotedMetadata / tweet.promotedMetadata）一律剔除。
+  // 返回 { id, views, likes, rt, replies, bm, createdMs, screenName }；任一项缺就回 null。
+  function tweetDataOf(e) {
+    const n = tweetOf(e);
+    if (!n) return null;
+    const leg = ob(n.legacy) || {};
+    if (leg.promotedMetadata || n.promotedMetadata) return null;
+    const vw = ob(n.views);
+    if (!vw || vw.state !== 'EnabledWithCount') return null;
+    const views = parseInt(vw.count, 10);
+    if (!isFinite(views) || views < 0) return null;
+    const id = String(leg.id_str || n.rest_id || '');
+    if (!/^\d{6,25}$/.test(id)) return null;
+    const createdMs = Date.parse(leg.created_at || '');
+    if (!(createdMs > 0)) return null;     // 没发布时间算不出流速，不进账
+    const ur = ob(ob(n.core) && n.core.user_results) || ob(n.user_results);
+    const ui = ob(ob(ur) && ur.result) || ob(n.author);
+    const sn = ob(ui) ? (String(ui.screen_name || (ob(ui.legacy) && ui.legacy.screen_name) || (ob(ui.core) && ui.core.screen_name) || '')) : '';
+    const num = (x) => { const v = parseInt(x, 10); return isFinite(v) && v >= 0 ? v : 0; };
+    return { id: id, views: views, likes: num(leg.favorite_count), rt: num(leg.retweet_count),
+      replies: num(leg.reply_count), bm: num(leg.bookmark_count), createdMs: createdMs,
+      screenName: String(sn).replace(/^@/, '') };
+  }
+  // 有界泛爬一条回包，凡见 tweet_results/tweetResult/tweetResults 的 result 就喂给 tweetDataOf（同参考插件 scanForTweets）。
+  // 预算 18000 节点 / 40 层，与关系那本账分家（各自 Set 防环）；推广帖在其 entry 层就被剔除，不下钻。
+  function scanTweetMetrics(v0, out) {
+    const seen = new Set();
+    const budget = { n: 18000 };
+    let found = 0;
+    const walk = (v, depth) => {
+      if (budget.n <= 0 || depth > 40 || v == null || typeof v !== 'object' || seen.has(v)) return;
+      seen.add(v); budget.n -= 1;
+      const r = ob(ob(v.tweet_results) && v.tweet_results.result)
+        || ob(ob(v.tweetResult) && v.tweetResult.result)
+        || ob(ob(v.tweetResults) && v.tweetResults.result);
+      if (r) {
+        const d = tweetDataOf(r);
+        if (d) { out.set(d.id, d); found++; }
+      }
+      const vs = Object.values(v);
+      for (let i = 0; i < vs.length; i++) walk(vs[i], depth + 1);
+    };
+    walk(v0, 0);
+    return found;
+  }
   // fiber 上下爬：往上 24 层（v）+ 向下 child/sibling 28 层（w，人数到 500 收手）——参考插件同款。
   // v0.11.7 只往上爬是它判不出的原因之一：行容器的祖先链上未必挂得有关系读数，子孙组件的 props 里才有。
   function fiberClimb(f, out, seen) {
@@ -183,6 +235,7 @@
   //    请求与响应原样放行 —— 不改参数、不换响应、不 abort。旁听攒进 netMap（逐格合并），
   //    问询来了直接用 —— 「动态刷新」的数据底座：X 什么时候拉新时间线，这里就什么时候有新读数。
   const netMap = new Map();
+  const netTweets = new Map();   // v0.12.7：tid → 帖子精确指标（只读旁听攒的，问一声就回）
   const GQL_RE = /\/i\/api\/graphql\//;
   // v0.11.11：旁听攒进 netMap 之外，还把「这趟刚学到/翻面」的 delta 主动推给 core（type:'push'）。
   // 为什么必须有推：core 只在它的节拍上问（15s 节流的一次一问一答），X 每次带读数的回包
@@ -208,6 +261,21 @@
       }
       if (n) window.postMessage({ source: SRC, type: 'push', users: delta }, window.location.origin);
     } catch (e) { /* 有界，炸不了；推不出去也有问询兜底 */ }
+    // v0.12.7：同一份回包再扫一遍帖子精确指标（与关系那本账分家）。只推「新 tid / 五项读数变了」
+    // 的 delta，按 tid 对齐；core 收着直接喂详情卡/榜单，不再靠 DOM 文字猜浏览量。
+    try {
+      const tb = new Map();
+      for (const [k, d] of netTweets) tb.set(k, d);
+      scanTweetMetrics(v, netTweets);
+      const td = {};
+      let tn = 0;
+      for (const [k, d] of netTweets) {
+        const old = tb.get(k);
+        if (!old || old.views !== d.views || old.likes !== d.likes || old.rt !== d.rt
+          || old.replies !== d.replies || old.bm !== d.bm) { td[k] = d; tn++; }
+      }
+      if (tn) window.postMessage({ source: SRC, type: 'tweetpush', tweets: td }, window.location.origin);
+    } catch (e) { /* 有界，炸不了；问询兜底 */ }
   }
   function urlOf(u) {
     if (typeof u === 'string') return u;
@@ -258,7 +326,16 @@
         if (typeof v.following !== 'boolean' && typeof v.followsYou !== 'boolean') continue;
         users[k] = { following: v.following, followsYou: v.followsYou };
       }
-      window.postMessage({ source: SRC, type: 'result', id: d.id, users: users }, window.location.origin);
+      // v0.12.7：问询可带 tids（≤80）才附带 tweets 字段（只回点名的帖子读数）；不带 tids 的旧问询
+      // 回包形状一个字节不变（关系桥老判据不回归）。tweetpush 主动推是主通道，这条只是冷启动兜底。
+      const res = { source: SRC, type: 'result', id: d.id, users: users };
+      if (Array.isArray(d.tids)) {
+        const wantT = d.tids.slice(0, 80).map((x) => String(x));
+        const tweets = {};
+        for (const [k, v] of netTweets) if (wantT.indexOf(k) >= 0) tweets[k] = v;
+        res.tweets = tweets;
+      }
+      window.postMessage(res, window.location.origin);
     } catch (e) {
       try { window.postMessage({ source: SRC, type: 'result', id: d.id, users: {} }, window.location.origin); } catch (e2) { /* 回不了就让对面超时解锁 */ }
     }

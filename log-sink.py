@@ -89,7 +89,7 @@ DEFAULT_DIR = _default_dir()
 DEFAULT_PORT = 8765
 MAX_BODY = 8 * 1024 * 1024
 MAX_DUMP_BODY = 64 * 1024 * 1024   # 整页转储比记录大两个量级，单独放宽，别把 tree 截断成半份现场
-SINK_VER = "sink-18"   # v0.9.7：/db 认 after（台账 id 游标），标杆同步走的是这条腿；旧进程不认 ⇒ 每次从头推，服务端唯一键去重
+SINK_VER = "sink-19"   # v0.12.15：POST /api/xprobe/{name} 同形读口（与智枢 Go 端点同名同参数；工作台云端档对齐一版）
 
 _SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]")
 _lock = threading.Lock()
@@ -217,6 +217,17 @@ def ping_body() -> dict:
             "byKind": snap["byKind"],
             "dumpTotal": snap["dumpTotal"], "dumpTestTotal": snap["dumpTestTotal"],
             "lastSeenAt": snap["lastSeenAt"], "db": _db_slim()}
+
+
+# v0.12.15 同形读口路由：POST /api/xprobe/{name} → 本机白名单查询。
+# 名字与参数名跟智枢 Go 的端点一字不差（红线：读口本地/云端同名、同 POST、同参数）。
+# 值 = (白名单查询名, 是否必填 author)。清单扩条必须两边同趟落（先对齐一版：4 条）。
+XPROBE_READ_ROUTES = {
+    "library/accounts": ("accounts", False),    # 账号榜（云端另有 page/keyword，本机忽略并在 ignored 点名）
+    "library/posts": ("author_posts", True),    # 作者模态（body 必带 author，与云端 /library/posts 同名）
+    "me/days": ("day_rows", False),             # 我的日点表（云端 capped 上限 4000，本机 size 夹 500）
+    "me/following": ("follow_starts", False),   # 未回关（云端 sort/not_followed_back，本机忽略并点名）
+}
 
 
 def db_body(name: str, limit: int, day: str = None, author: str = None,
@@ -806,8 +817,60 @@ class H(BaseHTTPRequestHandler):
             return
         self._send(404, {"ok": False, "err": "unknown path", "try": ["/ping", "/db?q=help", "/fs"]})
 
+    def _xprobe_read(self, name: str):
+        """同形读口（v0.12.15）：body JSON、参数名按云端（size/author/day），响应本机白名单形状 {ok, rows}。
+        本机用不上的云端参数（page/keyword/sort/not_followed_back）忽略但回包 ignored 里点名 —— 不装作支持（RL-11）。
+        无鉴权：这一路只对回环监听（127.0.0.1），与 GET /db 同一道门；云端那侧才有 token。"""
+        route = XPROBE_READ_ROUTES.get(name)
+        if route is None:
+            self._send(404, {"ok": False, "err": "未知读口 /api/xprobe/%s（本地/云端同形清单里没有这个名字）" % name,
+                             "try": sorted(XPROBE_READ_ROUTES.keys())})
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length > MAX_BODY:
+            self.close_connection = True
+            self._send(413, {"ok": False, "err": "bad length %s" % length})
+            return
+        raw = self.rfile.read(length) if length > 0 else b""
+        req = {}
+        if raw:
+            try:
+                req = json.loads(raw.decode("utf-8"))
+            except Exception as e:
+                self._send(400, {"ok": False, "err": "body 不是 JSON: %s" % str(e)[:60]})
+                return
+        if not isinstance(req, dict):
+            req = {}
+        try:
+            size = int(req.get("size") or req.get("limit") or 30)
+        except (TypeError, ValueError):
+            size = 30
+        size = max(1, min(500, size))
+        qname, need_author = route
+        author = None
+        if need_author:
+            author = str(req.get("author") or "").lstrip("@").lower() or None
+            if author is None:
+                self._send(400, {"ok": False, "err": "这个读口要 body 里带 author（与云端 /api/xprobe/library/posts 同参数名）"})
+                return
+        ignored = [k for k in ("page", "keyword", "sort", "not_followed_back") if k in req]
+        code, out = db_body(qname, size, (req.get("day") or None), author)
+        if isinstance(out, dict):
+            if ignored:
+                out["ignored"] = ignored   # 本机没实现的那几个参数，点名而不是悄悄吞掉
+            out["route"] = name
+        self._send(code, out)
+
     def do_POST(self):
         path = self.path.split("?")[0]
+        # v0.12.15 红线「读口本地/云端同形」：POST /api/xprobe/{name} 与智枢 Go 的同名端点
+        # 方法、路径、参数名一致，页面侧只换 baseURL。这是工作台云端档的对齐一版清单。
+        if path.startswith("/api/xprobe/"):
+            self._xprobe_read(path[len("/api/xprobe/"):])
+            return
         is_dump = path.startswith("/dump")
         is_fs = path.startswith("/fs")
         is_purge = path.startswith("/dbpurge")
