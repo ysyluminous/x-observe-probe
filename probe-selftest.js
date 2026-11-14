@@ -5017,9 +5017,11 @@ const layersDone = (async function () {
     // ---------- v0.8.0 云端同步：默认关、域名写死、身份只走 token 头 ----------
     const wc = runSW({});
     const cs0 = await wc.__send({ t: 'cloudState' });
-    eq('云端同步默认关（不登录一个字节都不出门），deviceId 已生成并落存储（浏览器 profile 级随机 UUID，非指纹）',
-      [cs0.ok, cs0.on, cs0.hasToken, (cs0.deviceId || '').length >= 8, !!wc.__map['ysy.xprobe.deviceId']],
-      [true, false, false, true, true]);
+    // v0.12.25（选项 A）：默认**开**闸（用户只差一次登录），但**没登录一个字节都不出门**。
+    // 闸开着 ≠ 会发请求：出网的前提仍是「有 token」。这条底线不许因为默认开闸而松掉。
+    eq('云端同步默认开闸（v0.12.25 选项 A：用户只差一次登录），但没登录一个字节都不出门；deviceId 已生成并落存储（浏览器 profile 级随机 UUID，非指纹）',
+      [cs0.ok, cs0.on, cs0.hasToken, (cs0.deviceId || '').length >= 8, !!wc.__map['ysy.xprobe.deviceId'], wc.__fetchCalls()],
+      [true, true, false, true, true, 0]);
     const cs1 = await wc.__send({ t: 'cloudState' });
     eq('deviceId 稳定（第二次问是同一个，不是每次现造）', cs1.deviceId, cs0.deviceId);
     const badMail = await wc.__send({ t: 'cloudSendCode', email: 'not-an-email' });
@@ -7264,10 +7266,12 @@ const layersDone = (async function () {
     const OKJSON = '{"code":200,"message":"ok","data":"a@b.co"}';
     const wEnv0 = runSW({});
     const st0 = await wEnv0.__send({ t: 'cloudState' });
-    eq('默认打线上；cloudState 把两档的地址与各档有没有登录态一起给面板（面板自己不写地址）',
+    // v0.12.25（选项 A）：默认打线上**且默认开闸**（用户只差一次登录）；
+    // 各档有没有登录态照旧分开报（没登录的那一档 logged=false）。
+    eq('默认打线上且默认开闸（v0.12.25 选项 A）；cloudState 把两档的地址与各档有没有登录态一起给面板（面板自己不写地址）',
       [st0.ok, st0.env, st0.base, st0.on, st0.hasToken,
         (st0.envs || []).map((e) => e.env + ':' + e.base + ':' + (e.logged ? 'y' : 'n'))],
-      [true, 'prod', PROD, false, false, ['prod:' + PROD + ':n', 'dev:' + DEV + ':n']]);
+      [true, 'prod', PROD, true, false, ['prod:' + PROD + ':n', 'dev:' + DEV + ':n']]);
     const eDev = await wEnv0.__send({ t: 'cloudEnvSet', env: 'dev' });
     eq('切到本机 dev：档位落存储，回包带着这一档的地址',
       [eDev.ok, eDev.env, eDev.base, wEnv0.__map['ysy.xprobe.cloudEnv']], [true, 'dev', DEV, 'dev']);
@@ -7495,7 +7499,8 @@ const layersDone = (async function () {
       !/function doEnvSet\(env\)[\s\S]{0,1800}cloudSt\.env = r\.env;/.test(
         sp28.replace(/cloudSt\.env = r\.env; cloudSt\.base = r\.base; cloudSt\.hasToken = !!r\.logged;/, '')), '');
     ok('SW 那一腿的回包带齐面板要合的字段（env/base/logged/email/on）——面板不必再问一次才知道换成哪台',
-      /if \(msg\.t === 'cloudEnvSet'\)[\s\S]{0,700}env: c\.env, base: c\.base, logged: !!c\.token, email: c\.email, on: !!c\.on/.test(sw28), '');
+      // v0.12.25：切档即推那段代码插在中间，字段位置往后挪了 ⇒ 窗口从 700 放到 1200。
+      /if \(msg\.t === 'cloudEnvSet'\)[\s\S]{0,1200}env: c\.env, base: c\.base, logged: !!c\.token, email: c\.email, on: !!c\.on/.test(sw28), '');
 
     // D-5：两种「点了没反应」各有说法——点的就是当前档 / 上一次还在路上
     ok('点当前那一档：不发写命令，状态行直接说「不用换：现在打的就是…」并回 noop（什么都没变却静默，就是「点了没反应」）',
@@ -7580,11 +7585,13 @@ const layersDone = (async function () {
       [true, 'prod', 2, { ac: 6, po: 0 }, undefined]);
     // 变异对照：跑改过的那份 SW（不是正则认字面）——抠掉首趟就只剩登录那一跳
     // v0.11.0 首趟是四条腿：变异对照把四条一起换成空 Promise（仍是合法源码，只是不出机器）
-    const swCut29 = sw29.replace(/uploadCloudNow\(\), xsyncRun\(\), libSyncRun\(\{ batches: LIB_MANUAL_BATCHES \}\),\s*blockSyncRun\(\{ batches: 40 \}\)\]/,
-      'Promise.resolve(), Promise.resolve(), Promise.resolve(), Promise.resolve()]');
+    // v0.12.23：首趟从四条腿变成五条（本机真源表增量同步腿 syncRunSafe），
+// 变异对照要跟着改 —— 否则正则匹配不上、变异没生效，这条判据就成了假通过。
+const swCut29 = sw29.replace(/uploadCloudNow\(\), xsyncRun\(\), libSyncRun\(\{ batches: LIB_MANUAL_BATCHES \}\),\s*blockSyncRun\(\{ batches: 40 \}\), syncRunSafe\(\)\]/,
+      'Promise.resolve(), Promise.resolve(), Promise.resolve(), Promise.resolve(), Promise.resolve()]');
     const wCut29 = runSW({ src: swCut29, native: dbNative29, byUrl: byLogin29, store: { 'ysy.xprobe.series': SERIES29, 'ysy.xprobe.guard': GUARD29 } });
     const rCut29 = await wCut29.__call({ t: 'cloudLogin', email: 'a@b.co', code: '1234' }, 4000);
-    ok('变异对照（真跑改过的 SW）：把首趟那四条腿抠成空 Promise ⇒ 只剩 codeLogin 一跳、firstPush 四条腿都没了（证明上面那几条判据咬的是这次并行推，不是源码里恰好有 uploadCloudNow 这个词）',
+    ok('变异对照（真跑改过的 SW）：把首趟那五条腿抠成空 Promise ⇒ 只剩 codeLogin 一跳、firstPush 五条腿都没了（证明上面那几条判据咬的是这次并行推，不是源码里恰好有 uploadCloudNow 这个词）',
       swCut29 !== sw29 && wCut29.__fetchCalls() === 1 && !(rCut29.firstPush && rCut29.firstPush.metrics),
       [swCut29 === sw29, wCut29.__fetchCalls(), rCut29.firstPush]);
     // 首趟也必须跟着档位走：dev 档登录 ⇒ 两腿都打 28081，线上一把都不碰（RL「切档不许串账」的另一半）
@@ -7867,9 +7874,16 @@ const layersDone = (async function () {
       const wLocal31 = runSW({ store: {} });
       const qLocal31 = await wLocal31.__call({ t: 'benchQuery', kind: 'ac' }, 4000);
       const mLocal31 = await wLocal31.__call({ t: 'benchMark', kind: 'ac', bizKey: 'demo_a', state: 1 }, 4000);
-      eq('本机模式：benchQuery / benchMark 都回 needLocal、零请求（「没开云端」不是错误，页面照常读本机库）',
+      // v0.12.25（选项 A）：默认开闸 ⇒ 「没设过」这一档的 why 从 'off' 变成 'login'
+      //（闸是开的，只是没登录）—— 页面照常读本机库，零请求这条底线不变。
+      // 显式关掉闸（on:false）的那一档仍然回 'off'：用户的选择不许被默认覆盖。
+      eq('默认开闸但没登录：benchQuery / benchMark 都回 needLocal（why=login）、零请求（页面照常读本机库）',
         [qLocal31.ok, qLocal31.needLocal, qLocal31.why, mLocal31.needLocal, mLocal31.why, wLocal31.__fetchCalls()],
-        [false, true, 'off', true, 'off', 0]);
+        [false, true, 'login', true, 'login', 0]);
+      const wOff31 = runSW({ store: { 'ysy.xprobe.cloud': { on: false, env: 'prod', acct: {} } } });
+      const qOff31 = await wOff31.__call({ t: 'benchQuery', kind: 'ac' }, 4000);
+      eq('显式关掉云端闸的那一档仍回 why=off（默认只对第一次生效，不许覆盖用户的选择）',
+        [qOff31.needLocal, qOff31.why, wOff31.__fetchCalls()], [true, 'off', 0]);
       // ② 开了云端模式但这档没登录：needLocal 且 why=login（不许把「没登录」说成「接口坏了」）
       const wNoTok31 = runSW({ store: { 'ysy.xprobe.cloud': { on: true, env: 'prod', acct: {} } } });
       const qNoTok31 = await wNoTok31.__call({ t: 'benchQuery', kind: 'ac' }, 4000);
@@ -9860,6 +9874,69 @@ const layersDone = (async function () {
       eq('反向对照：已有真实关注时间的人，ensureFollowSeed 不覆盖（不把 10 天改写成现在）',
         X41.followStartAt('reltest').day, fsBefore);
 
+      // ---- v0.12.26 用户现场「明明没关注他，却显示了我关注他的时间」：凭据门槛 + 读数落账 ----
+      // 这一组全是行为级（真跑沙箱），不靠源码正则：用户报的是显示错，就得验显示结果。
+      ok('followStartAt 先过凭据门槛（hasFollowEvidence），firstSeenAt 不许单独给关注日',
+        /function followStartAt\(h\)[\s\S]{0,300}if \(!hasFollowEvidence\(h\)\) return null/.test(core41), '');
+      ok('桶名纪律：followersListSeen 只认粉丝列表两个桶，桥读数的新桶不许混进去（否则「我单向」对陌生人全成立）',
+        /s\.followers \|\| s\.verified_followers/.test(core41)
+        && !/s\.followers \|\| s\.verified_followers \|\| s\.followed_by/.test(core41), '');
+      ok('弹卡关系判不出分支改叫「关注记录」、不再渲染「关注事件」+ 日期',
+        /rows\.push\(\['关注记录', meF \?/.test(core41) && !/rows\.push\(\['关注事件'/.test(core41), '');
+      ok('桥读数真变了的格连时刻落账 + 关系账留一份（不只是内存 Map）',
+        /relReadingPersist\(k, df \? v\.following : null, dy \? v\.followsYou : null\)/.test(core41)
+        && /if \(df\) relStorePut\(k,/.test(core41), '');
+
+      // ① 只刷到、没有任何关注凭据的人（有时间线首见时刻 firstSeenAt）不许领到关注日
+      g41.stranger26 = { handle: 'stranger26', name: '陌生人', relation: '', seenAs: {},
+        firstSeenAt: Date.now() - 2 * 86400000, updatedAt: 2 };
+      eq('没凭据的陌生人：followStartAt 为 null（firstSeenAt 不许冒充关注时间）',
+        X41.followStartAt('stranger26'), null);
+      ok('没凭据的陌生人：弹卡写「本机没记到关注记录」，整张卡没有日期、没有「关注事件」行',
+        (() => {
+          const rr = X41.relBadgeRows('stranger26', null);
+          const row = rr.filter((r) => r[0] === '关注记录')[0] || [];
+          return row[1] === '本机没记到关注记录'
+            && !rr.some((r) => /^\d{4}-\d{2}-\d{2}$/.test(String(r[1])))
+            && !rr.some((r) => r[0] === '关注事件');
+        })(), X41.relBadgeRows('stranger26', null));
+      eq('没凭据的陌生人：ensureFollowSeed 不种起算日（不给陌生人反复写台账）',
+        X41.ensureFollowSeed('stranger26'), false);
+      // ② 取关的人：即使留着旧的 seenAs.following 痕迹，也不许再显示关注日
+      g41.unfollowed26 = { handle: 'unfollowed26', relation: 'not_following',
+        seenAs: { following: new Date(Date.now() - 30 * 86400000).toISOString() },
+        firstSeenAt: Date.now() - 40 * 86400000 };
+      eq('已取关（relation=not_following）：followStartAt 为 null，不拿旧关注日冒充现在',
+        X41.followStartAt('unfollowed26'), null);
+      // ③ 正向对照：台账明确记着关注 ⇒ 手机关注那套估值仍在（不动存量、不误伤旧口径）
+      ok('正向对照：relation=following 的手机关注仍按 firstSeenAt 给估值，且标 estimated',
+        (() => { const f = X41.followStartAt('mefollow_unknown'); return !!f && f.estimated === true && /第一次见到/.test(f.src); })(),
+        X41.followStartAt('mefollow_unknown'));
+
+      // ④ 桥读数落账：读到 following=true / followed_by=true 就留时刻，刷新 / TTL 过期都不丢
+      g41.bridge26 = { handle: 'bridge26', name: '桥读数', relation: '', seenAs: {}, updatedAt: 1 };
+      eq('桥读数合并仍回「真变了账」的条数（存量口径不动）',
+        X41.relFiberMerge({ bridge26: { following: true, followsYou: true } }), 1);
+      ok('桥读数落账：seenAs.following / followed_by 都有 ISO 时刻，relation 翻成 following',
+        (() => { const u = g41.bridge26; return u.relation === 'following'
+          && /^\d{4}-/.test(String(u.seenAs.following || ''))
+          && /^\d{4}-/.test(String(u.seenAs.followed_by || '')); })(), g41.bridge26);
+      ok('桥读数落账后：弹卡（互关）我关注 TA / TA 关注我 / 互关时间 三段都是日期，不再「本机没记到」',
+        (() => {
+          const rr = X41.relBadgeRows('bridge26', { key: 'mutual', lab: '互关', tip: '' });
+          const kv = (k) => (rr.filter((r) => r[0] === k)[0] || [])[1];
+          return /^\d{4}-\d{2}-\d{2}$/.test(kv('我关注 TA') || '')
+            && /^\d{4}-\d{2}-\d{2}$/.test(kv('TA 关注我') || '')
+            && /^\d{4}-\d{2}-\d{2}$/.test(kv('互关时间') || '');
+        })(), X41.relBadgeRows('bridge26', { key: 'mutual', lab: '互关', tip: '' }));
+      // ⑤ 翻面（取关）：状态当场变，旧关注日立刻不许再显示
+      X41.relFiberMerge({ bridge26: { following: false, followsYou: false } });
+      ok('桥读数翻面（取关）：relation 变 not_following、followStartAt 当场为 null',
+        g41.bridge26.relation === 'not_following' && X41.followStartAt('bridge26') === null, g41.bridge26);
+      ok('读数落账后不靠 24h 内存缓存：只给台账也能判出「TA 关注我」',
+        (() => { const v = X41.relVerdict('bridge26', {}, false, null); return !!v && v.key === 'them'; })(),
+        X41.relVerdict('bridge26', {}, false, null));
+
       console.log('[41] 新增 ' + (pass - passBase) + ' 条断言通过 / 0 失败');
     }
 
@@ -9959,14 +10036,49 @@ const layersDone = (async function () {
       fs.existsSync(path.join(__dirname, 'skills', 'docs', 'DB-PARITY.md')) &&
       dbParity.split('## 表：').length >= 6 &&
       /本地 day_rows 没有 user_id 列/.test(dbParity), '');
-    const linesOf = (p) => fs.readFileSync(path.join(__dirname, 'extension', p), 'utf8').split('\n').length;
-    ok('RL-34 拆页与长度上限：六个 HTML 都有页头 tab 容器、六个页面脚本各 <160 行、公共壳 500–1500 行（硬上限 1500）、页签 renderTabs 生成本页 <a href>',
+    // ---------- RL-34 长度口径（2026-11-14）：只数「有效代码行」，注释一行都不算 ----------
+    // 为什么改口径：物理行数把「为什么这样写」和「干了什么」混在一起量，结果就是靠删注释压行数 ——
+    // HISTORY.md 里记着 view.js 从 1504 压回 1500，压的正是注释，逻辑一行没动。注释是后期
+    // AI 改这段代码时最需要的上下文，不该拿它去抵额度。
+    // 口径：整行 // 注释、/* */ 块注释、空行不计入；行尾注释所在的那一行仍算 1 行代码。
+    // 分层上限：页面脚本 160、渲染层 1500、SW 中继层 1600（15 段互不相同的中继职责，不是单页渲染器）。
+    // 反向保护：注释行数按目录汇总设下界，谁删注释过线当场判红；拆文件时把注释一起搬走不误伤。
+    const fileLen = (p) => {
+      const L = rd(p).split('\n');
+      let code = 0, comment = 0, blank = 0, inBlock = false;
+      L.forEach((raw) => {
+        const s = String(raw).trim();
+        if (inBlock) { comment++; if (s.indexOf('*/') >= 0) inBlock = false; return; }
+        if (!s) { blank++; return; }
+        if (s.indexOf('//') === 0 || s.charAt(0) === '*') { comment++; return; }
+        if (s.indexOf('/*') === 0) { comment++; if (s.indexOf('*/') < 0) inBlock = true; return; }
+        code++;
+      });
+      return { total: L.length, code: code, comment: comment, blank: blank };
+    };
+    const lenPage = DASH_PAGES.map((k) => fileLen('ui/dash/page-' + k + '.js'));
+    const lenDash = fileLen('ui/dashboard.js');
+    const lenView = fileLen('ui/view.js');
+    const lenSw = fileLen('background/sw.js');
+    const bgFiles = ['background/sw.js', 'background/sync.js', 'background/relstore.js'];
+    const uiFiles = ['ui/view.js', 'ui/kit.js', 'ui/dashboard.js'].concat(DASH_PAGES.map((k) => 'ui/dash/page-' + k + '.js'));
+    const sumComment = (ps) => ps.reduce((n, p) => n + fileLen(p).comment, 0);
+    ok('RL-34 拆页与长度上限（2026-11-14 口径：只数有效代码行，注释/空行不计入）：六个 HTML 都有页头 tab 容器、页面脚本 <160、公共壳与 view.js <1500、SW 中继层 <1600、页签 renderTabs 生成本页 <a href>',
       DASH_PAGES.length === 6 &&
       DASH_PAGES.every((k) => rd('ui/dash/' + k + '.html').indexOf('id="dTabs"') >= 0) &&
-      DASH_PAGES.every((k) => linesOf('ui/dash/page-' + k + '.js') < 160) &&
-      linesOf('ui/dashboard.js') < 1500 &&
+      lenPage.every((m) => m.code < 160) &&
+      lenDash.code < 1500 && lenView.code < 1500 && lenSw.code < 1600 &&
       /a\.href = t\.file;/.test(clean42) &&
-      /function renderTabs\(\)/.test(clean42), '');
+      /function renderTabs\(\)/.test(clean42),
+      ['page ' + lenPage.map((m) => m.code).join('/'), 'dash ' + lenDash.code,
+        'view ' + lenView.code, 'sw ' + lenSw.code]);
+    ok('RL-34 注释保护（2026-11-14）：注释按目录汇总只准增不准减，禁止靠删注释压行数（background ≥426 / ui ≥261）',
+      sumComment(bgFiles) >= 426 && sumComment(uiFiles) >= 261,
+      ['background ' + sumComment(bgFiles) + ' 行（基线 426）', 'ui ' + sumComment(uiFiles) + ' 行（基线 261）']);
+    ok('RL-34 口径自检（2026-11-14）：计数确实剥掉了注释与空行，不是拿物理行数冒充',
+      lenSw.total === lenSw.code + lenSw.comment + lenSw.blank &&
+      lenSw.comment >= (rd('background/sw.js').match(/^\s*\/\/.*$/gm) || []).length &&
+      lenSw.code < lenSw.total - 300, '');
   }
 
   // ---------- [43] grid 分流（2026-11-13 真机「广场读回 50 人但页面不出表」） ----------
@@ -10089,7 +10201,284 @@ const layersDone = (async function () {
       !!g44.capMeta && /本次读回 1 人/.test(g44.capMeta) && /账号排名/.test(html44) && /本次读回 1 人/.test(html44),
       { capMeta: g44.capMeta, html: html44.slice(0, 260) });
   }
+
+  // ---------- [45] 预测页历史被挤掉 + 回填钮打错通道（2026-11-13 用户报「点不够…现在 0」） ----------
+  // 现场：宿主日志的 beacon 行把现场钉死了 ——
+  //   08:09 序列=1440min/65day → 10:49 序列=1440min/10day（一次扩展重载前后掉 56 天）。
+  // 两条病：
+  //   ① core.js writeSeries()：序列超过 40 个 handle 就按 updatedAt 砍掉最旧的 ——
+  //      自己的号平时不更新（不点自己主页就没新点），被别人主页顶出 40 名之外就整段被删，
+  //      预测页要的那串「有效曝光累计读数」（eff）跟着没了 ⇒ 「点不够（要 3 天以上…现在 0）」。
+  //   ② core.js restoreDaysFromDb()（「从本机库回填」那颗钮）直接打 SINK 的 HTTP
+  //      （http://127.0.0.1:8765/db）—— 那个端口现在被 zhishu/search 占着、回 "Not Found"，
+  //      所以回填一直是死的，历史再也回不来；改走 SW 的 dbq（那条路 native 优先）。
+  {
+    const coreSrc45 = rd('content/core.js');
+    // 取出一个函数的完整源码（按大括号配平）
+    const fnSrc45 = (src, name) => {
+      const i = src.indexOf('function ' + name);
+      if (i < 0) return '';
+      let d = 0;
+      for (let j = i; j < src.length; j++) {
+        if (src[j] === '{') d++;
+        else if (src[j] === '}') { d--; if (!d) return src.slice(i, j + 1); }
+      }
+      return '';
+    };
+    const ws45 = fnSrc45(coreSrc45, 'writeSeries');
+    const rd45 = fnSrc45(coreSrc45, 'restoreDaysFromDb');
+    ok('预测页的历史不许再被别人主页挤掉（v0.12.22）：writeSeries 淘汰 handle 时必须保住自己的那一行（自己的号一年日线 IMP_MAX=365）',
+      /ownHandle\(\)/.test(ws45) && /keep\.push\(own\)/.test(ws45) &&
+      /delete series\[ks\[i\]\]/.test(ws45) === false, ws45.slice(0, 220));
+    ok('「从本机库回填」必须走 SW 的 dbq（native 优先），不许再直接打被 zhishu/search 占掉的 8765（v0.12.22）',
+      /dbAsk\(\{ t: 'dbq', q: 'day_rows'/.test(rd45) &&
+      /SINK \+ '\/db\?q=day_rows/.test(rd45) === false, rd45.slice(0, 220));
+    ok('本机库读口必须是 native 优先、HTTP 只兜底（sw.js 的 xhr 先 nativeCall 再 httpFallback）',
+      /nativeCall\(plan, ms\)/.test(rd('background/sw.js')) &&
+      /httpFallback\(msg, ms\)/.test(rd('background/sw.js')), '');
+
+// ---------- [46] v0.12.23 本机真源表增量同步腿 ----------
+  // 用户口径：「切换云端后立马把本地 db 同步增量到云端，线上返回入库成功后本地数据就可以删除了」。
+  // 这条腿是新增的，判据得钉住它最容易出错的六个点：
+  //   ① 本机读口必须是**真源表**（tweets/day_rows/follow_events），不是 store_* 那条流
+  //      —— 榜单口径就在这三张表上，读错表 ⇒ 本机榜和云端榜永远比不了（RL-33）。
+  //   ② 删本机只能按**服务端 ack 水位**，且服务端必须 confirmed（persisted=true 且 writeFail=0）。
+  //   ③ 清理失败 ⇒ 水位回退（宁重推不漏推）。
+  //   ④ 云端不可用/未登录 ⇒ 本机一行都不删，数据留在本机库（那里才是持久的地方）。
+  //   ⑤ 浏览器缓存只存「待传标记」，不存正文（正文在本机库；浏览器缓存只做账本）。
+  //   ⑥ Go 侧那个端点必须在路由里注册，且与 ingest / library-push 不是同一条腿。
+  {
+    const sw46 = rd('background/sw.js');
+    const sync46 = rd('background/sync.js');
+    const clean46 = (t) => t.replace(/^\s*\/\/.*$/gm, '');
+
+    ok('增量同步腿（v0.12.23）：删本机只能按服务端 ack 水位，且必须 persisted=true 且 writeFail=0 才删',
+      /persisted === true/.test(sync46) && /writeFail/.test(sync46) &&
+      /purgeAcked\(jobs\)/.test(sync46) &&
+      // 清理的那三对必须是「查询名 + ack 水位」，且水位取自服务端 ack（ackPost/ackDay/ackFollow）
+      /\['sync_posts', wm\.post\]/.test(sync46) && /\['sync_days', wm\.day\]/.test(sync46) &&
+      /\['sync_follows', wm\.follow\]/.test(sync46) &&
+      /ackOf\(dd\.ackPost/.test(sync46) && /ackOf\(dd\.ackDay/.test(sync46) &&
+      /ackOf\(dd\.ackFollow/.test(sync46), '');
+
+    ok('增量同步腿（v0.12.23）：清理失败 ⇒ 水位回退（宁重推不漏推）',
+      /wm\.post = before\.post/.test(sync46) && /wm\.day = before\.day/.test(sync46) &&
+      /wm\.follow = before\.follow/.test(sync46) && /purgeOk/.test(sync46), '');
+
+    ok('增量同步腿（v0.12.23）：未登录/没开云端 ⇒ 一行都不删（数据留在本机库）',
+      /if \(!c\.on \|\| !c\.token\)/.test(sync46) && /syncRunSafe/.test(sw46) &&
+      /sync_posts', 'sync_days', 'sync_follows'/.test(sw46), '');
+
+    ok('增量同步腿（v0.12.23）：浏览器缓存只存待传标记，不存正文（正文在本机库）',
+      /SYNC_PEND_KEY/.test(sync46) && /markPending/.test(sync46) &&
+      /lastSent/.test(sync46) && !/posts:\s*payload\.posts/.test(sync46), '');
+
+    ok('增量同步腿（v0.12.23）：闹钟与登录两趟都要触发它（登录成功立刻跑，不等闹钟）',
+      /XPROBE_SYNC\.schedule\(0\)/.test(sw46) && /syncRunSafe\(\)/.test(sw46) &&
+      /function syncRunSafe/.test(sw46), '');
+
+    ok('增量同步腿（v0.12.23）：sw.js 拆出独立文件（按职责分家，新腿不许再堆回 sw.js；2026-11-14 长度口径已改为只数有效代码行）',
+      // v0.12.25：importScripts 现在挂两个文件（sync.js + relstore.js）⇒ 判据放宽成「含 sync.js 即可」。
+      /importScripts\([^)]*'sync\.js'/.test(sw46) && /XPROBE_SYNC\.install\(/.test(sw46), '');
+
+    ok('增量同步腿（v0.12.23）：三条腿互不替代（ingest 吃浏览器存储 / library-push 吃 store_* / sync-push 吃真源表）',
+      /api\/xprobe\/ingest/.test(sw46) && /api\/xprobe\/library\/push/.test(sw46) &&
+      /api\/xprobe\/sync\/push/.test(sync46), '');
+  }
+
+// ---------- [47] v0.12.24 关系状态能更新 + 关注时间有账 + 标签三态 ----------
+  // 用户现场（2026-11-13）：
+  //   ① 「我明明没关注她，却显示我关注他的时间 2026-11-13」
+  //   ② 「我回关、不回刷新，互关还是他单向……现在不会更新」
+  //   ③ 「互关的标签，如果是拉黑的话需要给互关标签显示红色的拉黑，现在是个空白」
+  //   ④ 「如果没有任何状态，应该加一个醒目的闪烁的样式，提醒我关注」
+  //   ⑤ 「本机没记录到他关注我的事件就也给一个初始化值……自动更新当前时间」
+  // 这五条各有各的真因，判据也得各钉各的（不能一条正则糊过去）。
+  {
+    const core47 = rd('content/core.js');
+    const view47 = rd('ui/view.js');
+
+    // ① 取关后不更新：follow_starts 必须按**最新**动作判状态（last_dir），不是最早。
+    // ② 但「关注时间」仍取最早 follow 动作（面板说「我最早主动关注 TA」）—— 状态与时刻是两件事。
+    // ③ 「TA 关注我的时刻」要落库：seen_as 从「只存键名」改成「键→时刻」，且 follow_starts 要能抠出来。
+    ok('v0.12.24 关注时间初始化：seen_as 传键→时刻的整张表（不再只传键名，时刻才可能落库）',
+      /seenAsOut/.test(core47) && /Object\.keys\(u\.seenAs/.test(core47) === false &&
+      /seenAs: seenAsOut/.test(core47), '');
+
+    ok('v0.12.24 关注时间初始化：每次在列表里见到 TA 都把时刻刷新成 now（活跃更新，别人取关才有对照基线）',
+      /u\.seenAs\[bucket\] = now/.test(core47) &&
+      /u\.seenAs\[bucket\] = at/.test(core47) === false, '');
+
+    // ④ 我关注/回关后标签立刻更新：applyRelation 与 onFollowSeen 都要触发徽标重画。
+    ok('v0.12.24 标签即时更新：关系变了当场排徽标重画（applyRelation 里置 badgeNeedScan + relRenderSoon）',
+      /badgeNeedScan = true;/.test(core47) && /relRenderSoon\(\);/.test(core47) &&
+      /function applyRelation/.test(core47), '');
+
+    // 首见**不许**补动作流水：满屏「正在关注」都记成动作会灌爆台账（core.js 那条铁律）。
+    // 「我关注 TA 的时间」由台账快照时刻给（seen_as.following / first_seen），由 applyRelation 补 relation。
+    ok('v0.12.24 标签即时更新：首见只对齐基线、不补动作流水（浏览列表不许被算成「我关注了 N 个人」）',
+      /if \(prev === undefined\)/.test(core47) &&
+      /ledgerSet\(b\.id, cur\);/.test(core47) &&
+      /why: 'init'/.test(core47) === false, '');
+
+    // ⑤ 拉黑要红色标签（之前走空白占位盒分支 ⇒ 拉黑显示成空白方框）。
+    ok('v0.12.24 拉黑标签：拉黑态自己画一颗红底红字「拉黑」标签，不许落回空白占位盒',
+      /data-role', 'blocked'/.test(core47) && /拉黑/.test(core47) &&
+      /else if \(blocked\)/.test(core47), '');
+
+    // ⑥ 无任何状态 ⇒ 闪烁的「待关注」提醒（WAAPI，不许塞 <style> 节点进 X 的 DOM）。
+    ok('v0.12.24 空状态提醒：给一颗橙色「待关注」胶囊 + WAAPI 呼吸闪烁（不许给 X 的 DOM 多 <style> 节点）',
+      /待关注/.test(core47) && /ph\.animate/.test(core47) &&
+      /xprobeRelPulse/.test(core47) === false, '');
+
+    // 徽标那颗占位盒的 title 必须说「待确认」；弹窗里的「关系未知」是另一处措辞，不算矛盾。
+    ok('v0.12.24 空状态提醒：徽标那格的文案说「待确认」不许把「没读到」说成「没关注」（RL-11）',
+      /关系待确认（本机还没读到 TA 的关系读数）/.test(core47) &&
+      /textContent = '待关注'/.test(core47), '');
+
+    // ⑦ 面板那行要念出 followed_at（有值才念，没有一个字不提）。
+    ok('v0.12.24 面板显示：关注时间那行在有 followed_at 时念出「TA关注我于 X」，没有就不提',
+      /followed_at/.test(view47) && /TA关注我于/.test(view47), '');
+  }
+
+// ---------- [48] v0.12.25 选项 A：默认云端 + 自动降级 + 关系账搬进浏览器存储 ----------
+  // 用户拍板：「默认是云端模式，线上版。如果报错的话…一旦登录成功，就会把数据推到线上」。
+  // 四条各自钉住：
+  //   ① 默认云端：闸默认开，但**没登录一个字节都不出门**（底线不许松）。
+  //   ② 读口自动降级：云端读失败 ⇒ 这一轮自动回本机读，并**在状态行念出来**。
+  //   ③ 切档即推：切到云端档那一刻立刻推本机增量，不等闹钟。
+  //   ④ 关系账在浏览器存储：relstore.js 存在、跑在 SW 侧、content script 写它、面板能读它。
+  {
+    const sw48 = rd('background/sw.js');
+    const rel48 = rd('background/relstore.js');
+    const dash48 = rd('ui/dashboard.js');
+    const core48 = rd('content/core.js');
+
+    ok('v0.12.25 默认云端：闸的默认值是开（on !== false ⇒ 开），但用户显式关过就尊重那个选择',
+      /const on = r\.on !== false/.test(sw48), '');
+
+    ok('v0.12.25 默认云端：没 token 时一个字节都不出门（闸开着 ≠ 会发请求，这条底线不许松）',
+      /if \(!c\.on \|\| !c\.token\)/.test(sw48), '');
+
+    ok('v0.12.25 自动降级：云端读失败 ⇒ 这一轮自动回本机读（发 dbq），不是直接空着',
+      /local-fallback/.test(dash48) && /t: 'dbq'/.test(dash48) &&
+      /const why = r\.err \|\| '云端没回数'/.test(dash48), '');
+
+    ok('v0.12.25 自动降级：降级只影响这一轮，不改用户的档（下一轮云端好了自动回去）',
+      /via: 'local-fallback'/.test(dash48) && /degraded = \{ at: Date\.now\(\)/.test(dash48) &&
+      // 降级分支里不许动 dashSrc
+      !/degraded[\s\S]{0,200}dashSrc\s*=/.test(dash48), '');
+
+    ok('v0.12.25 自动降级：状态行必须念出「云端不可用 + 已用本机数据」（话术与实际必须一致）',
+      /云端不可用/.test(dash48) && /已自动改读本机数据/.test(dash48) &&
+      /degTxt/.test(dash48), '');
+
+    ok('v0.12.25 切档即推：两处切档（cloudEnvSet / dashEnvSet）都要立刻排一趟本机增量推送',
+      (sw48.match(/XPROBE_SYNC\.schedule\(200\)/g) || []).length >= 2, '');
+
+    ok('v0.12.25 关系账搬进浏览器存储：relstore.js 存在且跑在 SW 侧（importScripts 挂载）',
+      /importScripts\('sync\.js', 'relstore\.js'\)/.test(sw48) &&
+      /globalThis\.XPROBE_REL/.test(rel48), '');
+
+    ok('v0.12.25 关系账搬进浏览器存储：SW 有 rel 通道（content script 与面板走同一个入口）',
+      /msg\.t === 'rel'/.test(sw48) && /XPROBE_REL\.handle\(msg\)/.test(sw48), '');
+
+    ok('v0.12.25 关系账搬进浏览器存储：content script 采集时把关系写进去（异步、不阻塞页面）',
+      /relStorePut/.test(core48) && /t: 'rel', op: 'put'/.test(core48) &&
+      /chrome\.runtime\.sendMessage\(\{/.test(core48), '');
+
+    ok('v0.12.25 关系账搬进浏览器存储：relstore 有 viewer 隔离 + 分片（写放大从整表降到一片）',
+      /SHARDS\s*=\s*16/.test(rel48) && /rowKey/.test(rel48) && /viewer/.test(rel48), '');
+
+    ok('v0.12.25 关系账搬进浏览器存储：relstore 不做判定（判定唯一写者仍是 xprobe_db.py 的 follow_starts）',
+      /RL-22/.test(rel48), '');
+
+// ---------- [49] v0.12.25 关系账存储层的行为级判据 ----------
+  // 前面 [48] 是源码级判据（钉住「有这些东西」）；这里真跑一遍 relstore.js，
+  // 用假的 chrome.storage.local 装它，验行为：
+  //   写进去能不能读回来、handle 归一、firstSeenAt 不被刷掉、观测累积、
+  //   同一刻同关系不重复记、viewer 隔离、clear 只清自己那一份。
+  // 为什么必须真跑：这层是**数据层**，静态正则证明不了「读回来的是同一个东西」。
+  {
+    const mem49 = {};
+    const sb49 = { console, Date, Math, JSON, Object, Array, String, Number, Promise, setTimeout, clearTimeout };
+    sb49.globalThis = sb49; sb49.self = sb49;
+    sb49.chrome = {
+      storage: { local: {
+        get(keys) {
+          const out = {};
+          (keys || []).forEach((k) => { if (mem49[k] !== undefined) out[k] = mem49[k]; });
+          return Promise.resolve(out);
+        },
+        set(obj) { Object.keys(obj).forEach((k) => { mem49[k] = obj[k]; }); return Promise.resolve(); },
+        remove(keys) { (keys || []).forEach((k) => { delete mem49[k]; }); return Promise.resolve(); },
+      } },
+    };
+    vm.createContext(sb49);
+    vm.runInContext(rd('background/relstore.js'), sb49, { filename: 'relstore.js' });
+    const R49 = sb49.XPROBE_REL;
+
+    ok('关系账存储层（v0.12.25）：relstore 装上了并导出 API',
+      !!R49 && typeof R49.putUser === 'function' && typeof R49.listUsers === 'function' &&
+      typeof R49.handle === 'function', '');
+
+    // 写一条 → 读回来（handle 小写归一）
+    await R49.putUser('me', 'Alice', 'following', '2026-11-13T10:00:00.000Z', 'btn');
+    const u49 = await R49.getUser('me', 'alice');
+    ok('关系账存储层（v0.12.25）：写进去读得回来、handle 小写归一、关系存住',
+      !!u49 && u49.handle === 'alice' && u49.relationship === 'following' &&
+      u49.viewer === 'me', u49);
+
+    // 二次写：firstSeenAt 不许被刷掉，lastSeenAt 要更新
+    await R49.putUser('me', 'alice', 'not_following', '2026-11-13T12:00:00.000Z', 'btn');
+    const u49b = await R49.getUser('me', 'alice');
+    ok('关系账存储层（v0.12.25）：第一次见到的时刻不许被刷掉，最后见到的时刻要更新',
+      u49b.firstSeenAt === '2026-11-13T10:00:00.000Z' && u49b.lastSeenAt === '2026-11-13T12:00:00.000Z',
+      { firstSeenAt: u49b && u49b.firstSeenAt, lastSeenAt: u49b && u49b.lastSeenAt });
+
+    // 观测累积 + 同一刻同关系不重复记
+    const o49 = await R49.getObs('me', 'alice');
+    ok('关系账存储层（v0.12.25）：观测行累积、同一刻同一关系不重复记',
+      o49.length === 2 && o49.some((x) => x.relationship === 'following') &&
+      o49.some((x) => x.relationship === 'not_following'), o49.length);
+
+    // viewer 隔离
+    await R49.putUser('other', 'alice', 'following', '2026-11-13T11:00:00.000Z', 'btn');
+    const a49 = await R49.getUser('me', 'alice');
+    const b49 = await R49.getUser('other', 'alice');
+    ok('关系账存储层（v0.12.25）：viewer 隔离（换登录账号各看各的，不串账）',
+      a49.relationship === 'not_following' && b49.relationship === 'following',
+      { me: a49 && a49.relationship, other: b49 && b49.relationship });
+
+    // listUsers 按 viewer 过滤
+    const l49 = await R49.listUsers('me');
+    ok('关系账存储层（v0.12.25）：listUsers 只给这个 viewer 的人',
+      l49.length === 1 && l49[0].viewer === 'me', l49.map((x) => x.viewer));
+
+    // 分片：键是分片键（不是每行一个键）⇒ 写放大从「整表」降到「一片」
+    const shardKeys49 = Object.keys(mem49).filter((k) => k.indexOf('ysy.xprobe.rel.u.') === 0);
+    ok('关系账存储层（v0.12.25）：按分片存（16 片），不是整表一个键',
+      shardKeys49.length >= 1 && shardKeys49.length <= 16 &&
+      shardKeys49.every((k) => Array.isArray(mem49[k])), shardKeys49);
+
+    // clear 只清自己那一份
+    await R49.clear('me');
+    const c49 = await R49.listUsers('me');
+    const d49 = await R49.listUsers('other');
+    ok('关系账存储层（v0.12.25）：clear(viewer) 只清自己那一份，别人的留着',
+      c49.length === 0 && d49.length === 1, { me: c49.length, other: d49.length });
+
+    // SW 消息通道
+    const viaMsg49 = await R49.handle({ op: 'put', viewer: 'me', handle: 'bob', rel: 'following', at: '2026-11-13T13:00:00.000Z', source: 'btn' });
+    const bob49 = await R49.handle({ op: 'user', viewer: 'me', handle: 'bob' });
+    ok('关系账存储层（v0.12.25）：SW 消息通道与直接调用是同一份账（面板与 content script 看到的是同一份）',
+      viaMsg49 && viaMsg49.ok !== false && bob49 && bob49.handle === 'bob' &&
+      bob49.relationship === 'following', bob49);
+  }
+  }
+  }
 })();
+
 
 // [10] 的标题延后打印：扩展三层（[12]~[16]）是异步的，先等它跑完再排 [10]，输出顺序才是读的段落序
 const liveHeader = () => console.log('\n[10] 端到端打真 sink：自检流量分流 + 真机通道正向对照（需先跑 start-sink.bat）');

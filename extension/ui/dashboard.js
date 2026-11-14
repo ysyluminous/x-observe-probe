@@ -14,7 +14,7 @@
   const $ = (id) => document.getElementById(id);
   const V = globalThis.XPROBE_VIEW;
   // 版本戳与面板同规：⟳ 之后这页若还是旧值，说明文档没跟着换（Chrome 会继续跑旧 JS）
-  const DASH_BUILD = '2026-11-13-e';
+  const DASH_BUILD = '2026-11-14-a';
   const out = { err: '' };
   // v0.12.14（art-033）：渲染层/发送通道抽进 ui/kit.js 共用；页面差异由 create(deps) 注入——
   // 工作台比面板多注入 one()（数据源二选一的取数通道），作者模态框/时间线选天都走它。
@@ -179,6 +179,8 @@
     if (q === 'day_rows') return rows.map((r) => Object.assign({}, r, { token: r.token != null ? r.token : null }));
     return rows;
   }
+  // v0.12.25：降级状态（最近一次「云端读了但没读成、已回本机」）。状态行要念它。
+  let degraded = null;
   function one(q, limit, extra) {
     if (dashSrc !== 'cloud') {
       return send({ t: 'dbq', q: q, limit: limit, day: (extra && extra.day), author: (extra && extra.author),
@@ -188,8 +190,23 @@
     if (!m) return Promise.resolve(Object.assign({ via: 'cloud' }, CLOUD_NO(q)));
     return qRead(m.name, m.body(limit, extra)).then((r) => {
       // 失败也把 via 带回去：否则面板那条诊断会把「云端没连上」显示成「通道 未定」（RL-11 不装作不知道）。
-      if (!r.ok) return { ok: false, err: r.err || '云端没回数', needLogin: !!r.needLogin, rows: [], via: 'cloud' };
-      return { ok: true, rows: mapCloudRows(q, r.data), via: 'cloud' };
+      if (r.ok) return { ok: true, rows: mapCloudRows(q, r.data), via: 'cloud' };
+      // v0.12.25（选项 A）：**云端读失败 ⇒ 这一轮自动回本机读**（降级，不是切档）。
+      // 为什么：用户要「只用一套」，但云端会挂（没登录/服务重启/网络断）。
+      //   以前这一轮直接空着 ⇒ 面板什么都没有，用户以为数据没了；
+      //   现在自动读本机那份 ⇒ 页面照常有数，只是状态行说一句「云端不可用，已用本机数据」。
+      // ⚠ 只是**这一轮**降级，不改 dashSrc（用户的档还是云端档，下一轮云端好了会自动回去）。
+      // ⚠ 降级读的是本机 SQLite —— 需要宿主 exe；没有宿主时这条路也读不成，那就照实说失败。
+      const why = r.err || '云端没回数';
+      return send({ t: 'dbq', q: q, limit: limit, day: (extra && extra.day), author: (extra && extra.author),
+        hours: (extra && extra.hours === undefined ? undefined : extra.hours) }).then((lr) => {
+        if (lr && lr.ok) {
+          degraded = { at: Date.now(), err: why, needLogin: !!r.needLogin };
+          return { ok: true, rows: lr.rows, via: 'local-fallback', degraded: why };
+        }
+        degraded = { at: Date.now(), err: why, needLogin: !!r.needLogin, localErr: (lr && lr.err) || '' };
+        return { ok: false, err: why, needLogin: !!r.needLogin, rows: [], via: 'cloud' };
+      });
     });
   }
 
@@ -375,9 +392,16 @@
     const srcTxt = dashSrc === 'cloud'
       ? ('数据源：云端 · ' + ((dashConf_ && dashConf_.label) || '') + '（' + ((dashConf_ && dashConf_.base) || '') + '，前端智枢网关转发到 Go）')
       : '数据源：本地库（SW → 原生宿主读 xprobe.db；宿主不在时回退本机 HTTP sink）';
+    // v0.12.25（选项 A）：**降级要念出来**。
+    // 云端这一轮没读成、已自动回本机 ⇒ 状态行必须说「已用本机数据」+ 为什么，
+    // 否则用户看到的是本机档的数却以为那是云端的数据（那正是 v0.12.19 修过的老坑：话术与实际不符）。
+    const degTxt = degraded
+      ? ('⚠ 云端不可用（' + String(degraded.err || '').slice(0, 60) + '）· 这一轮已自动改读本机数据 · '
+         + (degraded.needLogin ? '重新登录云端即可恢复' : '云端恢复后自动回到云端'))
+      : '';
     f.textContent = '';
     const l1 = document.createElement('div');
-    l1.textContent = (srcNote ? srcNote + '　|　' : '') + srcTxt + ' · ' + ver + ' · 只读观测：本页不请求 x.com、不点页面任何东西';
+    l1.textContent = (srcNote ? srcNote + '　|　' : '') + (degTxt ? degTxt + '　|　' : '') + srcTxt + ' · ' + ver + ' · 只读观测：本页不请求 x.com、不点页面任何东西';
     const l2 = document.createElement('div');
     l2.textContent = '口径：未回关 = follow_starts 查询 follow_back=no（unknown 是没读到，不算）；榜 = accounts/posts_top/posts_growth；今日关注 = 面板「今日目标」同一本账。没有的数据写 — 不编数。';
     f.append(l1, l2);

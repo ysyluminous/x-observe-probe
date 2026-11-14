@@ -221,6 +221,39 @@ def main() -> int:
         r = h.send({"t": "db", "q": "bench_accounts", "limit": 20})
         ck("空库也回 200/ok 而不是 400", [r.get("status"), r.get("body", {}).get("ok")], [200, True])
 
+        print("[2b] v0.12.23 的三条增量同步查询（sync_posts / sync_days / sync_follows）")
+        # 这一组是「本机真源表 → 云端」那条新腿的读口。旧 exe 里打包的是旧 xprobe_db.py，
+        # 认不得这三个名字 ⇒ 回「未知查询」⇒ 这组会当场判红。
+        for q in ("sync_posts", "sync_days", "sync_follows"):
+            rr = h.send({"t": "db", "q": q, "after": 0, "limit": 5})
+            ck("exe 认得 %s（v0.12.23 增量同步腿的读口）" % q,
+               [rr.get("status"), rr.get("body", {}).get("ok")], [200, True])
+        rr = h.send({"t": "db", "q": "sync_posts", "after": 0, "limit": 5})
+        ck("sync_posts 回的行带 id/tweet_id（id 是游标，删本机按它）",
+           all(("id" in (x or {}) and "tweet_id" in (x or {})) for x in (rr.get("body", {}).get("rows") or [])), True)
+        rr = h.send({"t": "db", "q": "sync_days", "after": 0, "limit": 5})
+        ck("sync_days 回的行带 id/handle/day",
+           all(("id" in (x or {}) and "handle" in (x or {}) and "day" in (x or {}))
+               for x in (rr.get("body", {}).get("rows") or [])), True)
+
+        print("[2c] v0.12.24 follow_starts 的新口径（取关判定 + followed_at 列）")
+        # 这条查询里带了 CHAR(34) 抠时刻那段（不依赖 JSON1）⇒ 宿主打包的 SQLite 少了 JSON1 也能跑。
+        # 旧 exe 里打包的是旧 xprobe_db.py ⇒ 没有 followed_at 列 ⇒ 这组会当场判红。
+        rf = h.send({"t": "db", "q": "follow_starts", "limit": 20})
+        rb = rf.get("body", {})
+        ck("exe 认得 follow_starts 且跑通（v0.12.24 取关判定那段不依赖 JSON1）",
+           [rf.get("status"), rb.get("ok")], [200, True])
+        rws = rb.get("rows") or []
+        # 判据咬「回包的列清单」而不是「行内容」：空库时 rows 是空的（rows[0] 是 None），
+        # 逐行查列会误判。列清单来自 cur.description ⇒ 有这列就说明 exe 里的 SQL 是新的。
+        # 宿主回包不一定带 cols（各版本裁过字段）⇒ 判据咬**行里的键**，那才是使用方真正看到的形状。
+        # 宿主回包形状：{ok, query, cols, rows, db}。判据咬**列清单**（cols 来自 cur.description）
+        # —— 空库时 rows 是空数组，逐行查键会误判。
+        ck("follow_starts 回的列清单里有 followed_at（TA 关注我的时刻）",
+           "followed_at" in (rb.get("cols") or []), True)
+        ck("follow_starts 回的列清单里有 relation / follow_back（状态判定两列）",
+           "relation" in (rb.get("cols") or []) and "follow_back" in (rb.get("cols") or []), True)
+
         print("[3] kind=bench 真落进 benchmarks 表")
         b = h.body({"t": "log", "body": json.dumps(
             {"kind": "bench", "at": iso(now), "receivedAt": iso(now), "url": "https://x.com/home",

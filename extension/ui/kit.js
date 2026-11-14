@@ -9,7 +9,7 @@
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';   // XML 标识符，不是要请求的地址
-  const KIT_BUILD = '2026-11-13-e';
+  const KIT_BUILD = '2026-11-14-a';
 
   function create(deps) {
     deps = deps || {};

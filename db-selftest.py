@@ -1609,6 +1609,110 @@ def leg_parity(xdb):
        "user_id 由 Go" in parity and "本地不建" in parity, "")
 
 
+def leg_syncq(xdb):
+    """[Q] v0.12.23 增量同步腿的本机侧：真源表读口 + 清理白名单 + rowid 口径。
+
+    这条腿是「本机 SQLite 的真源表 → 云端」，与已有的两条腿互补：
+      ingest       吃浏览器存储里的增量
+      library/push 吃 store_users / store_posts 那条流
+      sync/push    吃**真源表** tweets / day_rows / follow_events（榜单口径就在这三张表上）
+    判据要钉住：读口读的是真源表、清理白名单含这三条、且 day_rows/follow_events 按 rowid 删
+    （这两张表没有 id 列，混用 id 会删错行 —— 那等于静默丢数据）。
+    """
+    Q = xdb.QUERIES
+    for q, tbl in (("sync_posts", "tweets"), ("sync_days", "day_rows"), ("sync_follows", "follow_events")):
+        ck("增量同步腿：查询 %s 存在且读的是真源表 %s" % (q, tbl), q in Q and tbl in (Q.get(q) or ""),
+           (Q.get(q) or "")[:70])
+    ck("增量同步腿：三条查询都带 (after, limit) 两个占位符（游标 + 批量）",
+       all((Q.get(q) or "").count("?") == 2 for q in ("sync_posts", "sync_days", "sync_follows")),
+       {q: (Q.get(q) or "").count("?") for q in ("sync_posts", "sync_days", "sync_follows")})
+    ck("增量同步腿：sync_posts 用 tweets.id 作游标且排除广告行（ad_suspect）",
+       "t.id > ?" in (Q.get("sync_posts") or "") and "ad_suspect" in (Q.get("sync_posts") or ""),
+       (Q.get("sync_posts") or "")[:110])
+    ck("增量同步腿：sync_posts 导出帖子榜要的那几个指标（view/like/repost/reply/quote/bookmark）",
+       all(("$.%s.num.value" % k) in (Q.get("sync_posts") or "")
+           for k in ("view", "like", "repost", "reply", "quote", "bookmark")), "")
+    ck("增量同步腿：清理白名单含三条新查询名",
+       all(k in xdb.PURGE_TABLES for k in ("sync_posts", "sync_days", "sync_follows")),
+       sorted(xdb.PURGE_TABLES.keys()))
+    ck("增量同步腿：白名单映射到正确的真源表",
+       xdb.PURGE_TABLES.get("sync_posts") == "tweets" and
+       xdb.PURGE_TABLES.get("sync_days") == "day_rows" and
+       xdb.PURGE_TABLES.get("sync_follows") == "follow_events", "")
+    ck("增量同步腿：day_rows / follow_events 没有 id 列 ⇒ 必须按 rowid 删（用 id 会删错行）",
+       "day_rows" in getattr(xdb, "PURGE_ROWID_TABLES", set()) and
+       "follow_events" in getattr(xdb, "PURGE_ROWID_TABLES", set()),
+       getattr(xdb, "PURGE_ROWID_TABLES", None))
+    ck("增量同步腿：purge 仍然只认白名单（调用方给不了表名/SQL）",
+       "unknown" not in xdb.PURGE_TABLES and
+       all(k in xdb.PURGE_TABLES for k in ("bench_marks_ac", "lib_users", "lib_posts", "sync_posts")),
+       "")
+
+
+def leg_followfix(xdb):
+    """[R] v0.12.24 关系状态能更新 + 关注时间有账（用户现场五条）。
+
+    ① 取关后不更新：follow_starts 必须按**最后一次**动作判「现在还关注吗」，
+       不是最早（earliest 口径让「关注过又取关」的人永远显示成"我关注 TA"）。
+    ② 但「关注时间」仍取**最早那条 follow 动作** —— 状态与时刻是两件事，不许混。
+    ③ 「TA 关注我的时刻」要能落库：seen_as 从「只存键名」改成「键→时刻」，
+       follow_starts 多带 followed_at 一列；抠时刻不许依赖 JSON1（宿主打包的 SQLite 没有）。
+    """
+    sql = xdb.QUERIES["follow_starts"]
+
+    ck("v0.12.24 取关语义：follow_starts 按最后一次动作判状态（ev.last_dir）",
+       "last_dir" in sql and "WHERE ev.last_dir = 'follow'" in sql, "")
+    ck("v0.12.24 取关语义：事件集合含 unfollow（不然取关动作永远看不见）",
+       "IN ('follow','unfollow')" in sql, "")
+    ck("v0.12.24 取关语义：台账写 not_following 的人不进名单（我已取关，不拿旧动作冒充现状）",
+       "<> 'not_following'" in sql, "")
+    ck("v0.12.24 时刻口径：关注时间取最早那条 follow 动作（evf.first_follow_at）",
+       "first_follow_at" in sql and "MIN(at) AS first_follow_at" in sql and
+       "COALESCE(evf.first_follow_at, ev.follow_at, u.first_seen_at)" in sql, "")
+    ck("v0.12.24 关注时间：follow_starts 多带 followed_at 一列（TA 关注我的时刻）",
+       "followed_at" in sql and "followers_at" in sql, "")
+    ck("v0.12.24 关注时间：抠时刻不许用 json_extract（宿主打包的 SQLite 无 JSON1 ⇒ 直接语法错）",
+       "json_extract" not in sql and "CHAR(34)" in sql, "")
+
+    # 行为级：造库验「关注过又取关的人不进名单」「关注时间取最早」「followed_at 能抠出来」
+    import sqlite3 as _sq, tempfile as _tf, os as _os
+    tmp = _tf.mktemp(suffix=".db")
+    try:
+        cn = _sq.connect(tmp)
+        cn.row_factory = _sq.Row
+        cn.executescript(xdb.SCHEMA)
+        cn.execute("INSERT INTO follow_events(key,at,day,handle,dir,suspect) VALUES(?,?,?,?,?,0)",
+                   ("f1", "2026-10-01T08:00:00.000Z", "2026-10-01", "alice", "follow"))
+        cn.execute("INSERT INTO follow_events(key,at,day,handle,dir,suspect) VALUES(?,?,?,?,?,0)",
+                   ("f2", "2026-11-01T08:00:00.000Z", "2026-11-01", "alice", "follow"))
+        cn.execute("INSERT INTO follow_events(key,at,day,handle,dir,suspect) VALUES(?,?,?,?,?,0)",
+                   ("f3", "2026-11-05T08:00:00.000Z", "2026-11-05", "bob", "follow"))
+        cn.execute("INSERT INTO follow_events(key,at,day,handle,dir,suspect) VALUES(?,?,?,?,?,0)",
+                   ("f4", "2026-11-06T08:00:00.000Z", "2026-11-06", "bob", "unfollow"))
+        cn.execute("INSERT INTO store_users(key,at,handle,relation,own,seen_as) VALUES(?,?,?,?,?,?)",
+                   ("u1", "2026-11-02T00:00:00.000Z", "alice", "following", 0,
+                    '{"followers":"2026-11-03T10:00:00.000Z","following":"2026-10-01T08:00:00.000Z"}'))
+        cn.execute("INSERT INTO store_users(key,at,handle,relation,own,seen_as) VALUES(?,?,?,?,?,?)",
+                   ("u2", "2026-11-07T00:00:00.000Z", "bob", "not_following", 0, "{}"))
+        cn.commit()
+        rows = [dict(r) for r in cn.execute(sql, (100,))]
+        by = {r["handle"]: r for r in rows}
+        ck("v0.12.24 行为：关注过又取关的人（bob）不进名单",
+           "bob" not in by, sorted(by))
+        ck("v0.12.24 行为：还在关注的人（alice）在名单里，关注时间取**最早**那条 follow 动作",
+           "alice" in by and by["alice"]["follow_at"] == "2026-10-01T08:00:00.000Z",
+           by.get("alice", {}).get("follow_at"))
+        ck("v0.12.24 行为：followed_at 能从 seen_as 的 map 里抠出 TA 关注我的时刻",
+           by.get("alice", {}).get("followed_at") == "2026-11-03T10:00:00.000Z",
+           by.get("alice", {}).get("followed_at"))
+        cn.close()
+    finally:
+        try:
+            _os.unlink(tmp)
+        except Exception:
+            pass
+
+
 def leg_fs(tmp):
     """[F] 本机文件与清理（v0.8.8）：占用测量 + 按保留天数删除，先单元后腿端到端。
     为什么这条腿必须存在：删除是本项目唯一一件做错了回不来的动作，而它的开关装在浏览器里
@@ -1884,6 +1988,8 @@ def main() -> int:
         leg_http(xdb, tmp, a.logs)
         leg_native(tmp)
         leg_parity(xdb)
+        leg_syncq(xdb)
+        leg_followfix(xdb)
         leg_fs(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

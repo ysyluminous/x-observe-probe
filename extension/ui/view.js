@@ -1440,13 +1440,14 @@
       var ms = Date.parse(r.follow_at || '') || 0;
       var days = ms ? Math.max(0, Math.floor((now - ms) / 86400000)) : null;
       var est = r.at_source === 'estimated';
-      var txt = '@' + r.handle +
-        '  ' + (r.follow_at ? String(r.follow_at).slice(0, 10) : '时间未知') + (est ? '（估）' : '') +
-        '  关注 ' + (days == null ? '—' : days + ' 天') +
-        '  ' + FB_LABEL[fb] +
-        (r.suspect ? '  ⚠可疑' : '');
+      // v0.12.24：followed_at = 「TA 关注我」的时刻（seen_as 的 map 里抠出来的，见 xprobe_db.py）。
+      // 有值才念出来，没有一个字不提（不编，RL-11）。
+      var fa = r.followed_at ? String(r.followed_at).slice(0, 10) : '';
+      var txt = '@' + r.handle + '  ' + (r.follow_at ? String(r.follow_at).slice(0, 10) : '时间未知')
+        + (est ? '（估）' : '') + '  关注 ' + (days == null ? '—' : days + ' 天') + '  ' + FB_LABEL[fb]
+        + (fa ? '  · TA关注我于 ' + fa : '') + (r.suspect ? '  ⚠可疑' : '');
       out.push({ handle: r.handle, follow_at: r.follow_at || '', at_source: r.at_source || '',
-        follow_back: fb, suspect: !!r.suspect, days: days, text: txt });
+        follow_back: fb, suspect: !!r.suspect, days: days, followed_at: r.followed_at || '', text: txt });
     });
     // 调用方（SQL）本来就排好了；这里再排一次是防御：换了数据源也不许把「估」插到真实事件前面。
     out.sort(function (a, b) {

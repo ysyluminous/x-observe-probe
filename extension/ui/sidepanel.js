@@ -8,7 +8,7 @@
   const V = globalThis.XPROBE_VIEW;
   // 面板自己的版本戳（不是 core 报的那个）：⟳ 之后若这颗还是旧值，说明这个 Side Panel 文档
   // 没跟着换（Chrome 会让已打开的面板继续跑旧 JS），先关掉重开面板再谈别的。
-  const PANEL_BUILD = '2026-11-13-e';
+  const PANEL_BUILD = '2026-11-14-a';
   const out = { err: '' };
   // v0.12.14（art-033）：渲染层（tick/各节点/摘要框家族/榜排序分页状态）与发送通道抽进 ui/kit.js，
   // 面板与工作台共用一份实现。页面差异（页面名、重画、取数、state）由 create(deps) 注入；

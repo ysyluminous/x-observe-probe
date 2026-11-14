@@ -323,7 +323,11 @@ QUERIES = {
     # v0.12.4「关注时间 / 未回关」：一人一行，按**历史首条**主动关注动作排序（用户 11-12 拍板）。
     # 判定只在这条 SQL 里做一次（RL-22 唯一写者）：面板 / 上送 / 云端都消费同一份结论，不许各写一套。
     # 四跳同名（RL-26）：at_source / follow_back / suspect 三列到 JS、Go、PostgreSQL、TS 都不改名。
-    # ① ev：每人最早一条 dir='follow'（MIN(at)，ISO 字符串字典序即时间序）；handle 小写归一。
+    # ① ev：**最新**一条 dir='follow'/'unfollow' 事件（按 at 取最新，不是最早）——
+    #    「我现在还关注 TA 吗」的答案 = 最后一次动作是什么。earliest 那个口径（v0.8 起的 MIN(at)）
+    #    会让「关注过又取关」的人永远显示成"我关注 TA"，面板上那行"我关注他的时间"就成了假账
+    #    （真机 2026-11-13：annieouannie / ecfkk 已取关，名单里却还写着 2026-11-13 的关注时间）。
+    #    ⇒ 事件组只留「最后一次是 follow」的人；最后一次是 unfollow 的不进名单（我已取关，不该再列）。
     # ② u：台账每人最新一行的 relation / seen_as，加 MIN(at) 当「第一次见到 TA」的固化时刻。
     # ③ 三态：seen_as 里进过 followers/verified_followers ⇒ yes（已回关）；
     #    seen_as 里进过 following 且本机确实进过粉丝列表（fl.seen=1）⇒ no（明确未回关）；
@@ -331,10 +335,20 @@ QUERIES = {
     # ④ at_source='event' 用真实动作时间；没有真实事件的存量（手机关注的）用 u.first_seen_at
     #    并标 estimated：写一次就固化（库里最早那次快照不会变），绝不覆盖真实事件、不冒充真时间。
     #    只有「我确实关注过」的存量才补（seen_as.following / relation='following'），own=1 的自己不进名单。
+    #    ⚠ 估值组（estimated）必须再看一眼台账最新 relation：是 not_following 的不列
+    #    （我已取关，只是台账里没留下动作流水 ⇒ 不列，不拿"第一次见到"冒充关注时间）。
     # ⑤ 排序：真实事件组按时间升序在前，估值组垫底；LIMIT ? 走 query() 的单参通道。
     "follow_starts": "WITH ev AS ("
-               " SELECT lower(handle) AS handle, MIN(at) AS follow_at,"
-               " MAX(CASE WHEN COALESCE(suspect, 0) = 1 THEN 1 ELSE 0 END) AS suspect"
+               " SELECT lower(handle) AS handle, MAX(at) AS follow_at,"
+               " MAX(CASE WHEN COALESCE(suspect, 0) = 1 THEN 1 ELSE 0 END) AS suspect,"
+               " SUBSTR(MAX(at || '|' || COALESCE(dir,'')),"
+               "         INSTR(MAX(at || '|' || COALESCE(dir,'')), '|') + 1) AS last_dir"
+               " FROM follow_events WHERE lower(COALESCE(dir, '')) IN ('follow','unfollow')"
+               " AND COALESCE(handle, '') <> '' GROUP BY lower(handle)),"
+               # 最早那条 **follow** 动作的时刻（=「我最早主动关注 TA 的那天」，面板排序就靠它）。
+               # 与 last_dir（最后一次动作是什么）分开算：状态看最新、时刻看最早 —— 两件事。
+               " evf AS ("
+               " SELECT lower(handle) AS handle, MIN(at) AS first_follow_at"
                " FROM follow_events WHERE lower(COALESCE(dir, '')) = 'follow'"
                " AND COALESCE(handle, '') <> '' GROUP BY lower(handle)),"
                " u AS ("
@@ -342,28 +356,64 @@ QUERIES = {
                " (SELECT x.relation FROM store_users x WHERE lower(x.handle) = lower(s.handle)"
                "  ORDER BY x.id DESC LIMIT 1) AS relation,"
                " (SELECT x.seen_as FROM store_users x WHERE lower(x.handle) = lower(s.handle)"
-               "  ORDER BY x.id DESC LIMIT 1) AS seen_as"
+               "  ORDER BY x.id DESC LIMIT 1) AS seen_as,"
+               # v0.12.24：TA 关注我的时刻。seen_as 现在是 {桶名: 时刻} 的 map（core.js v0.12.24 起不再只传键名），
+               # 形如 {"followers":"2026-11-13T02:31:05.123Z","following":"..."}。
+               # 为什么用字符串抠而不是 json_extract：**宿主打包的 SQLite 不保证有 JSON1 扩展**
+               # （本机 Python 的 3.53 有，打包的 exe 里没有 ⇒ 那条查询在宿主上直接报语法错）。
+               # ⇒ 只用 LIKE + SUBSTR 抠，JSON1 一律不依赖。
+               # 老数据 seen_as 是数组（["followers"]）⇒ 抠不出时刻 ⇒ 回空串（不编，RL-11）。
+               # ⚠ SQLite 把双引号当**标识符**（不是字符串）：直接写 '"followers":"' 会被当成列名 ⇒ 语法错。
+               #   ⇒ 一律用 CHAR(34) 拼双引号。
+               " (SELECT CASE"
+               "   WHEN COALESCE(x.seen_as,'') LIKE '%' || CHAR(34) || 'followers' || CHAR(34) || ':' || CHAR(34) || '%'"
+               "     THEN SUBSTR(x.seen_as, INSTR(x.seen_as, CHAR(34) || 'followers' || CHAR(34) || ':' || CHAR(34)) + 13,"
+               "                   CASE WHEN INSTR(SUBSTR(x.seen_as, INSTR(x.seen_as, CHAR(34) || 'followers' || CHAR(34) || ':' || CHAR(34)) + 13), CHAR(34)) > 0"
+               "                        THEN INSTR(SUBSTR(x.seen_as, INSTR(x.seen_as, CHAR(34) || 'followers' || CHAR(34) || ':' || CHAR(34)) + 13), CHAR(34)) - 1"
+               "                        ELSE 0 END)"
+               "   WHEN COALESCE(x.seen_as,'') LIKE '%' || CHAR(34) || 'verified_followers' || CHAR(34) || ':' || CHAR(34) || '%'"
+               "     THEN SUBSTR(x.seen_as, INSTR(x.seen_as, CHAR(34) || 'verified_followers' || CHAR(34) || ':' || CHAR(34)) + 21,"
+               "                   CASE WHEN INSTR(SUBSTR(x.seen_as, INSTR(x.seen_as, CHAR(34) || 'verified_followers' || CHAR(34) || ':' || CHAR(34)) + 21), CHAR(34)) > 0"
+               "                        THEN INSTR(SUBSTR(x.seen_as, INSTR(x.seen_as, CHAR(34) || 'verified_followers' || CHAR(34) || ':' || CHAR(34)) + 21), CHAR(34)) - 1"
+               "                        ELSE 0 END)"
+               "   ELSE '' END"
+               "  FROM store_users x WHERE lower(x.handle) = lower(s.handle)"
+               "  ORDER BY x.id DESC LIMIT 1) AS followers_at"
                " FROM store_users s WHERE COALESCE(s.handle, '') <> '' GROUP BY lower(s.handle)),"
                " fl AS (SELECT CASE WHEN EXISTS(SELECT 1 FROM store_users g"
                " WHERE COALESCE(g.seen_as, '') LIKE '%followers%') THEN 1 ELSE 0 END AS seen)"
-               " SELECT handle, follow_at, at_source, suspect, relation, seen_as, follow_back FROM ("
+               " SELECT handle, follow_at, at_source, suspect, relation, seen_as, follow_back, followed_at FROM ("
                " SELECT COALESCE(ev.handle, u.handle) AS handle,"
-               " COALESCE(ev.follow_at, u.first_seen_at) AS follow_at,"
-               " CASE WHEN ev.follow_at IS NOT NULL THEN 'event' ELSE 'estimated' END AS at_source,"
+               # 关注时间 = 最早那条 follow 动作的时刻（面板说的「我最早主动关注 TA」）；
+               # 没有 follow 动作但有 unfollow 动作（我关注过又取关）⇒ 用那次 unfollow 的时刻当"我关注过的时间"；
+               # 都没有 ⇒ 退回台账的「第一次见到 TA」并标 estimated。
+               " COALESCE(evf.first_follow_at, ev.follow_at, u.first_seen_at) AS follow_at,"
+               " CASE WHEN evf.first_follow_at IS NOT NULL OR ev.follow_at IS NOT NULL THEN 'event'"
+               "      ELSE 'estimated' END AS at_source,"
                " COALESCE(ev.suspect, 0) AS suspect, COALESCE(u.relation, '') AS relation,"
                " COALESCE(u.seen_as, '') AS seen_as,"
+               " COALESCE(u.followers_at, '') AS followed_at,"
                " CASE WHEN COALESCE(u.seen_as, '') LIKE '%followers%' THEN 'yes'"
                " WHEN COALESCE(u.seen_as, '') LIKE '%following%' AND (SELECT seen FROM fl) = 1 THEN 'no'"
                " ELSE 'unknown' END AS follow_back"
+               # 事件组：只有「最后一次动作是 follow」的人才算我现在还关注 TA。
+               # 最后一次是 unfollow 的（我已取关）不列 —— 列了就是拿旧动作冒充现状（真机 2026-11-13 现场）。
                " FROM ev LEFT JOIN u ON u.handle = ev.handle"
+               " LEFT JOIN evf ON evf.handle = ev.handle"
+               " WHERE ev.last_dir = 'follow'"
+               # 台账说 not_following 的一律不列（我已取关，台账里没留下动作流水而已）
+               "   AND lower(COALESCE(u.relation, '')) <> 'not_following'"
                " UNION ALL"
                " SELECT u.handle, u.first_seen_at, 'estimated', 0, u.relation, u.seen_as,"
+               " COALESCE(u.followers_at, ''),"
                " CASE WHEN COALESCE(u.seen_as, '') LIKE '%followers%' THEN 'yes'"
                " WHEN COALESCE(u.seen_as, '') LIKE '%following%' AND (SELECT seen FROM fl) = 1 THEN 'no'"
                " ELSE 'unknown' END"
                " FROM u WHERE u.handle NOT IN (SELECT handle FROM ev) AND u.own = 0"
                " AND (COALESCE(u.seen_as, '') LIKE '%following%'"
-               "      OR lower(COALESCE(u.relation, '')) = 'following'))"
+               "      OR lower(COALESCE(u.relation, '')) = 'following')"
+               # 估值组同理：台账明确写着 not_following 的不列（不拿"第一次见到"冒充关注时间）
+               " AND lower(COALESCE(u.relation, '')) <> 'not_following')"
                " ORDER BY CASE WHEN at_source = 'event' THEN 0 ELSE 1 END,"
                " follow_at ASC, handle ASC LIMIT ?",
     "trend": "SELECT at, handle, following, followers, exact, reason"
@@ -469,6 +519,33 @@ QUERIES = {
                  " JOIN (SELECT post_id, MAX(id) AS mid FROM store_posts"
                  "       WHERE post_id <> '' GROUP BY post_id) m ON m.mid = u.id"
                  " WHERE u.id > ? ORDER BY u.id ASC LIMIT ?",
+    # ------------------------------------------------------------------
+    # v0.12.23 增量同步腿（真源表口径）：lib_users/lib_posts 推的是 store_* 那条流，
+    # 而**本机榜单的真源**是 tweets（经 post_points 视图）/ day_rows / follow_events。
+    # 榜单口径与上云口径必须是同一批数据，否则本机榜和云端榜没法比（RL-33）。
+    # 这三条按「行 id 游标」增量读，游标是单调自增的整数，与钟表无关。
+    #   sync_posts  : tweets.id（= post_points.tid），取该帖的**最新一次观测**那一行
+    #   sync_days   : day_rows.rowid
+    #   sync_follows: follow_events.rowid
+    # 为什么按行 id 而不是按业务键：业务键（tweet_id / handle|day）会重复出现，
+    # 游标必须能「往前推」才不会漏；服务端 ack 的就是这个游标（xAckBefore 同一套）。
+    "sync_posts": "SELECT t.id AS id, t.tweet_id, t.at, t.author, t.text, t.time_datetime,"
+                  " t.follow_state, COALESCE(t.liked,0) AS liked,"
+                  " json_extract(t.metrics,'$.view.num.value') AS view,"
+                  " json_extract(t.metrics,'$.like.num.value') AS like,"
+                  " json_extract(t.metrics,'$.repost.num.value') AS repost,"
+                  " json_extract(t.metrics,'$.reply.num.value') AS reply,"
+                  " json_extract(t.metrics,'$.quote.num.value') AS quote,"
+                  " json_extract(t.metrics,'$.bookmark.num.value') AS bookmark"
+                  " FROM tweets t"
+                  " WHERE t.id > ? AND t.tweet_id IS NOT NULL AND t.tweet_id <> ''"
+                  "   AND COALESCE(t.ad_suspect,0)=0"
+                  " ORDER BY t.id ASC LIMIT ?",
+    "sync_days": "SELECT rowid AS id, at, day, handle, exposure, effective, exact, token,"
+                 " following, followers, posts, manual, source"
+                 " FROM day_rows WHERE rowid > ? ORDER BY rowid ASC LIMIT ?",
+    "sync_follows": "SELECT rowid AS id, at, day, handle, dir, why, w15, w24, suspect"
+                    " FROM follow_events WHERE rowid > ? ORDER BY rowid ASC LIMIT ?",
     # v0.10.7 同步进度：不新开同步账本，**服务端 ack 水位就是账**。
     # lib_users / lib_posts 推的正是「每个业务键的 MAX(id) 那一行」⇒ 一个键算不算已推，就看它的 mid 是否 <= 水位：
     #   total   = 本地有多少个不同的 handle / post_id（和档案上送的口径逐字一致，不含空键）
@@ -1124,7 +1201,8 @@ def query(name: str, limit: int = 20, day: str = None, author: str = None,
             conn = _DB["conn"]
             sql = QUERIES[name]
             nph = sql.count("?")
-            if nph == 2 and name in ("bench_marks_ac", "bench_marks_po", "lib_users", "lib_posts", "block_marks"):
+            if nph == 2 and name in ("bench_marks_ac", "bench_marks_po", "lib_users", "lib_posts", "block_marks",
+                                       "sync_posts", "sync_days", "sync_follows"):
                 try:
                     cur = conn.execute(sql, (_after_int(after), limit))
                 except ValueError as e:
@@ -1182,17 +1260,31 @@ def query(name: str, limit: int = 20, day: str = None, author: str = None,
 
 # v0.12.0 云端模式「推完即清」：只有服务端回过 ack 的行才允许从本机台账删除。
 # 白名单把「查询名 -> 真实表」写死，调用方给不了 SQL、给不了表名；upto 是服务端 ack 的 id 水位。
+#
+# v0.12.23 增量同步腿加了三张「真源表」：
+#   sync_posts   -> tweets        （帖子真源，榜单口径就是它）
+#   sync_days    -> day_rows      （日点真源）
+#   sync_follows -> follow_events （关注流水真源）
+# 这三张表的行没有 id 列，但有 rowid（SQLite 的隐式行号，AUTOINCREMENT 表之外也稳定），
+# 而同步腿的游标就是按 rowid 递的 ⇒ 清理也按 rowid 删，两条腿用同一个水位。
+# rowid 会在行被删后复用，所以「删掉的都是已 ack 的行」这个前提必须成立（服务端 ack 保证）。
 PURGE_TABLES = {
     "bench_marks_ac": "benchmarks",
     "bench_marks_po": "bench_posts",
     "lib_users": "store_users",
     "lib_posts": "store_posts",
     "block_marks": "blocks",
+    "sync_posts": "tweets",
+    "sync_days": "day_rows",
+    "sync_follows": "follow_events",
 }
+
+# 这三张表用 rowid 当游标（没有 id 列）。表名写死在上面，调用方给不了 SQL。
+PURGE_ROWID_TABLES = {"day_rows", "follow_events"}
 
 
 def purge(name: str, upto: int = 0) -> dict:
-    """删掉本机台账里 id <= upto 的行。只允许上云那五条腿用，且 upto 必须来自服务端 ack。
+    """删掉本机台账里 id <= upto 的行。只允许上云那几条腿用，且 upto 必须来自服务端 ack。
     坏形状一律拒绝、不默认 0（默认 0 等于啥也不删，但也不该假装成功）；删失败整体回滚。"""
     if name not in PURGE_TABLES:
         return {"ok": False, "err": "未知清理目标 %r" % name, "allow": sorted(PURGE_TABLES)}
@@ -1205,9 +1297,13 @@ def purge(name: str, upto: int = 0) -> dict:
             return {"ok": False, "err": _DB["err"] or "库未打开", "purge": name}
         try:
             conn = _DB["conn"]
-            cur = conn.execute("DELETE FROM %s WHERE id <= ?" % PURGE_TABLES[name], (n,))
+            tbl = PURGE_TABLES[name]
+            if tbl in PURGE_ROWID_TABLES:
+                cur = conn.execute("DELETE FROM %s WHERE rowid <= ?" % tbl, (n,))
+            else:
+                cur = conn.execute("DELETE FROM %s WHERE id <= ?" % tbl, (n,))
             conn.commit()
-            return {"ok": True, "purge": name, "table": PURGE_TABLES[name],
+            return {"ok": True, "purge": name, "table": tbl,
                     "upto": n, "deleted": cur.rowcount, "db": _stats_locked()}
         except Exception as e:
             conn.rollback()

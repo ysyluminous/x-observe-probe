@@ -7,6 +7,14 @@
 (function () {
   'use strict';
 
+  // v0.12.23：增量同步腿拆成独立文件（按职责分家，不让这个文件继续长成一个什么都装的大疙瘩）。
+  // v0.12.25：关系账存储层（relstore.js）也拆出来 —— 它跑在 SW 侧：写入串行、面板同源可读。
+  // 2026-11-14 更正：这里原来写「sw.js 已 1,860 行，超过 RL-34 的 1,500 上限」，那是拿**含注释的物理行数**
+  // 量的。RL-34 的长度口径已改成「只数有效代码行、注释与空行不计入」，并给 SW 中继层单列 1600 行额度；
+  // 那句数字作废，拆文件的理由不变。口径全文见 skills/docs/API-CONTRACT.md §3.1。
+  // importScripts 在 SW 里是同步的 ⇒ 这两个文件里定义的东西，这一行之后就能用。
+  try { importScripts('sync.js', 'relstore.js'); } catch (e) { /* 自检沙箱没有 importScripts */ }
+
   const SINK = ['http://127.0.0.1:8765/', 'http://localhost:8765/'];
   const GUARD_KEY = 'ysy.xprobe.guard', USERS_KEY = 'ysy.xprobe.users', POSTS_KEY = 'ysy.xprobe.posts', RUNS_KEY = 'ysy.xprobe.v1', SERIES_KEY = 'ysy.xprobe.series', QUEUE_KEY = 'ysy.xprobe.queue';
   // v0.12.4：面板读本机库后落「一人一行」的结论，SW 上送只读这一份，绝不在同步链路里另起一次宿主请求。
@@ -41,6 +49,9 @@
       scheduleLibSync(0);
       // 拉黑台账同一条道理（v0.11.0）：它也是宿主直写库，没有「写存储」的心跳
       scheduleBlockSync(0);
+      // v0.12.23：本机真源表（tweets/day_rows/follow_events）这条增量同步腿。
+      // 它也是宿主直写库 ⇒ 同样只靠这颗钟 + 登录那趟兜底。
+      try { if (globalThis.XPROBE_SYNC && globalThis.XPROBE_SYNC.schedule) globalThis.XPROBE_SYNC.schedule(0); } catch (e) { /* 沙箱 */ }
     });
   } catch (e) { /* 自检沙箱没有 alarms */ }
 
@@ -488,7 +499,10 @@
   // 顺序必须是「先删本机、再写水位」：删成功而水位写失败 ⇒ 下次整批重推、唯一键去重，安全；
   // 反过来（先写水位）一旦清理失败，那些行就永远留在本地却再也不会被读出来。
   const DB_PURGE_URL = 'http://127.0.0.1:8765/dbpurge';
-  const PURGE_Q = ['bench_marks_ac', 'bench_marks_po', 'lib_users', 'lib_posts', 'block_marks'];
+  // v0.12.23 加三条真源表（sync_posts/sync_days/sync_follows）：本机榜单口径就是这三张表，
+// 同步腿推完按服务端 ack 水位删它们。删除只认服务端回的水位，绝不自己算。
+const PURGE_Q = ['bench_marks_ac', 'bench_marks_po', 'lib_users', 'lib_posts', 'block_marks',
+    'sync_posts', 'sync_days', 'sync_follows'];
   function dbpurge(q, upto) {
     const name = String(q || '');
     const n = Number(upto);
@@ -517,6 +531,38 @@
       purged: rs.map((x, i) => ({ q: jobs[i][0], upto: jobs[i][1], ok: !!x.ok,
         deleted: x.deleted || 0, err: x.err || '' })),
     }));
+  }
+
+  // v0.12.23：把闭包内的能力注入给独立的 sync.js（增量同步腿）。
+  // 为什么要拆文件：新腿有几百行，塞进 sw.js 只会让那个文件更难读 —— RL-34 的「单文件短小」
+  // 本意就是按职责分家，不是为了凑某个行数。拆出去的只有新腿这一块，存量逻辑一个字没动。
+  // 2026-11-14 更正：这里原来写的「sw.js 超 1,500 行上限」是含注释的物理行数，口径已改（§3.1），数字作废。
+  // 注入的是「能力」不是「数据」：sync.js 自己管水位、自己管重试、自己管批数。
+  try {
+    if (globalThis.XPROBE_SYNC && typeof globalThis.XPROBE_SYNC.install === 'function') {
+      globalThis.XPROBE_SYNC.install({
+        getKey: getKey, setKey: setKey,
+        cloudConf: cloudConf, cloudPost: cloudPost,
+        dbq: dbq, ensureDeviceId: ensureDeviceId,
+        acctTag: acctTag, envOf: envOf,
+        purgeAcked: purgeAcked, armRetryAlarm: armRetryAlarm,
+        CLOUD_ENV_DEF: CLOUD_ENV_DEF,
+      });
+    }
+  } catch (e) { /* 自检沙箱里没有 importScripts ⇒ sync.js 不存在，跳过 */ }
+
+  // v0.12.23：增量同步腿的安全包装。
+  // sync.js 是独立文件（importScripts 挂载），自检沙箱/旧宿主下它可能不在 ⇒ 这里统一兜住，
+  // 绝不让「这条腿缺失」把整条登录流程带崩（登录成功必须与同步成败分开）。
+  function syncRunSafe(opts) {
+    try {
+      if (globalThis.XPROBE_SYNC && typeof globalThis.XPROBE_SYNC.run === 'function') {
+        return globalThis.XPROBE_SYNC.run(opts).catch((e) => ({
+          ok: false, err: '本机库同步出错：' + String((e && e.message) || e).slice(0, 120),
+        }));
+      }
+    } catch (e) { /* 沙箱没有 sync.js */ }
+    return Promise.resolve({ ok: false, err: '本机库同步腿没装上（sync.js 没加载）' });
   }
 
   // ---------- 本机占用与清理（v0.8.8）----------
@@ -631,7 +677,15 @@
     return cloudEnv().then((env) => getKey(CLOUD_KEY).then((raw) => {
       const r = (raw && typeof raw === 'object') ? raw : {};
       const a = cloudAcctAll(r)[env] || NO_ACCT;
-      return { env: env, base: baseOf(env), on: !!r.on, token: a.token, email: a.email, userId: a.userId };
+      // v0.12.25（选项 A）：**默认云端**。
+      // 之前 on 缺省是 false ⇒ 用户每次都要先「打开云端模式」再登录，两道手续；
+      // 现在「从没设置过」默认就是开的，用户只差一次登录。
+      // ⚠ 用户**显式关掉**过就尊重那个选择（r.on === false 时不再当缺省）——
+      //   「默认」只对第一次生效，不许把用户的选择覆盖掉。
+      // ⚠ 没登录 ≠ 关掉：on=true 而 token='' 时，状态行必须说「要登录」而不是「本机档」
+      //   （那是 v0.12.19 修过的老坑：连了云端却写本机库话术）。
+      const on = r.on !== false;
+      return { env: env, base: baseOf(env), on: on, token: a.token, email: a.email, userId: a.userId };
     }));
   }
   // 唯一的写入口：先读回原样，只改传进来的那一样（on = 全局那颗闸，acct = 当前档的账号，acct:null 只抹当前档）。
@@ -1630,6 +1684,17 @@
       return true;
     }
     if (msg.t === 'dbq') { dbq(msg).then(sendResponse); return true; }   // 不转标签页：本机库与页面无关
+    // v0.12.25：浏览器端关系账的读写通道（content script 与面板都走它，一个入口）。
+    if (msg.t === 'rel') {
+      try {
+        if (globalThis.XPROBE_REL && typeof globalThis.XPROBE_REL.handle === 'function') {
+          globalThis.XPROBE_REL.handle(msg).then(sendResponse);
+          return true;
+        }
+      } catch (e) { /* 沙箱没有 relstore */ }
+      sendResponse({ ok: false, err: '关系账存储层没装上（relstore.js 没加载）' });
+      return true;
+    }
     if (msg.t === 'fsq') { fsq(msg).then(sendResponse); return true; }   // 本机占用测量（只读）
     if (msg.t === 'fsc') { fsc(msg).then(sendResponse); return true; }   // 清理/整理库/改策略（写，缺省 dry）
     // 云端同步这几件事都只认 SW（面板直接发消息，不经标签页、不经 core）：
@@ -1667,6 +1732,11 @@
       const o = {}; o[CLOUD_ENV_KEY] = want;
       setKey(o).then((w) => {
         if (!w || !w.ok) { sendResponse({ ok: false, err: (w && w.err) || '档位没落盘' }); return; }
+        // v0.12.25（选项 A·G3）：**切档那一刻立刻把本机增量推上去**，不等闹钟。
+        // 为什么：用户切到云端档就是要看云端那份数据；本机刚采的东西不先推过去，
+        //   云端页面看到的就是旧账 ⇒ 用户以为「切了档数据没同步」。
+        // 推失败不挡切档（切档本身已经成功），失败的那趟由闹钟兜底。
+        try { if (globalThis.XPROBE_SYNC && globalThis.XPROBE_SYNC.schedule) globalThis.XPROBE_SYNC.schedule(200); } catch (e) { /* 沙箱 */ }
         cloudConf().then((c) => sendResponse({ ok: true, env: c.env, base: c.base, logged: !!c.token, email: c.email, on: !!c.on }));
       });
       return true;
@@ -1696,9 +1766,9 @@
             // 靠的就是这一趟；沿用 40 批的上限时，几十万行的库要等半小时闹钟慢慢追。
             // v0.11.0：拉黑台账也走同一趟首推（用户口径「自己账号的拉黑记录也要同步」）—— 四条腿各报各的。
             return Promise.all([uploadCloudNow(), xsyncRun(), libSyncRun({ batches: LIB_MANUAL_BATCHES }),
-              blockSyncRun({ batches: 40 })]).then((four) =>
+              blockSyncRun({ batches: 40 }), syncRunSafe()]).then((four) =>
               sendResponse({ ok: true, email: email, nick: String(u.nickName || ''),
-                firstPush: { metrics: four[0], bench: four[1], library: four[2], block: four[3] } }));
+                firstPush: { metrics: four[0], bench: four[1], library: four[2], block: four[3], sync: four[4] } }));
           });
       });
       return true;
@@ -1731,7 +1801,11 @@
         return;
       }
       const o = {}; o[CLOUD_ENV_KEY] = want;
-      setKey(o).then(() => dashConf()).then((c) => sendResponse(Object.assign({ ok: true }, c)));
+      setKey(o).then(() => {
+        // v0.12.25（选项 A·G3）：工作台切档同样立刻推一次本机增量（与 cloudEnvSet 同一条纪律）。
+        try { if (globalThis.XPROBE_SYNC && globalThis.XPROBE_SYNC.schedule) globalThis.XPROBE_SYNC.schedule(200); } catch (e) { /* 沙箱 */ }
+        return dashConf();
+      }).then((c) => sendResponse(Object.assign({ ok: true }, c)));
       return true;
     }
     if (msg.t === 'dashSendCode') {
@@ -1762,6 +1836,19 @@
       return true;
     }
     if (msg.t === 'cloudSyncNow') { uploadCloudNow().then(sendResponse); return true; }
+    // v0.12.23：本机真源表增量同步腿。状态只报「这一档有没有登录态 + 水位到哪儿 + 待传多少」，
+    // token 明文一律不回面板；跑一次抬一次服务端给的 ack，ack 确认落库后才删本机。
+    if (msg.t === 'syncState') {
+      cloudConf().then((c) => {
+        let pending = null;
+        try { if (globalThis.XPROBE_SYNC && globalThis.XPROBE_SYNC.readPending) pending = globalThis.XPROBE_SYNC.readPending(c.env); } catch (e) { /* 沙箱 */ }
+        Promise.resolve(pending).then((pd) => getKey('ysy.xprobe.syncStat').then((st) =>
+          sendResponse({ ok: true, conf: { env: c.env, base: c.base, on: !!c.on, logged: !!c.token, email: c.email || '' },
+            stat: st || null, pending: pd || null })));
+      });
+      return true;
+    }
+    if (msg.t === 'syncRunNow') { syncRunSafe({ batches: 500 }).then(sendResponse); return true; }
     // 标杆同步两件事（v0.9.7）：状态只报「这一档有没有登录态 + 水位到哪儿」，token 明文一律不回面板；跑一次抬一次服务端给的 ack
     if (msg.t === 'xsyncState') {
       cloudConf().then((c) => xsWm(c.env, c).then((wm) => getKey(XS_STAT_KEY).then((st) =>

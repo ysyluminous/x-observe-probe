@@ -7,9 +7,9 @@
 // 页面里我只留一个节点（右下角浮标），详面板搬到扩展自己的 Side Panel ⇒ 注入节点归零是这次换壳的真收益。
 (function () {
   'use strict';
-  const VER = '0.12.21';
+  const VER = '0.12.25';
 
-  const BUILD = '2026-11-13-e';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
+  const BUILD = '2026-11-14-a';   // 换版必改：日志/Side Panel/浮标里靠它确认跑的是哪一份代码
   const SINK = 'http://127.0.0.1:8765';
   const STORE_KEY = 'ysy.xprobe.v1';
   // 浏览器这边只留「运行态」，整页原文的去处是本机 xprobe.db（sink-9）。
@@ -1772,6 +1772,24 @@
     }
     return tabName() === 'profile' ? normHandle(handleFromPath(location.pathname)) : '';
   }
+  // v0.12.25：把一条关系观测写进浏览器端关系账（SW 侧 relstore）。
+  // 只记「关系事实」：谁、我关注不关注 TA、什么时候读到的、从哪条腿读到的。
+  // 不做判定（判定的唯一写者是 xprobe_db.py 的 follow_starts，RL-22）。
+  let relStoreFail = 0;
+  function relStorePut(handle, rel, source) {
+    try {
+      if (typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') return;
+      chrome.runtime.sendMessage({
+        t: 'rel', op: 'put', viewer: String(idt.handle || ''),
+        handle: String(handle || ''), rel: String(rel || ''),
+        at: new Date().toISOString(), source: String(source || ''),
+      }, (r) => {
+        const e = chrome.runtime.lastError;
+        if (e) { relStoreFail++; return; }
+        if (r && r.ok === false) relStoreFail++;
+      });
+    } catch (e) { relStoreFail++; }
+  }
   function applyRelation(node, state) {
     const h = btnHandle(node);
     if (!h) return '';
@@ -1779,9 +1797,39 @@
     // 只修表里已有的人：开机扫一遍满屏关注按钮（含推荐位/侧栏）不等于这些账号进过我的表，
     // 给它们凭空造行会把「最该关注」灌满噪声。新面孔由采集那一侧（列表/时间线/主页）入表。
     const u = users[h];
+    // v0.12.26：首见「正在关注」/「回关」这两颗钮 ⇒ 连时刻一起落账。
+    // 以前 applyRelation 只写 relation、不带任何时刻 ⇒ 「我关注 TA 的时间」只能退到
+    // firstSeenAt 估值；「回关」这颗钮（TA 关注我）更是完全不落账，刷新就丢。
+    // 只补缺的那一格（已有更早痕迹不覆盖），不改判定归属，也不凭空造行。
+    if (u) {
+      if (!u.seenAs || typeof u.seenAs !== 'object') u.seenAs = {};
+      const aria = String((node && node.getAttribute && node.getAttribute('aria-label')) || '');
+      let dirty = false;
+      if (rel === 'following' && !u.seenAs.following) {
+        u.seenAs.following = new Date().toISOString(); dirty = true;
+      }
+      if (/回关|Follow back/i.test(aria) && !u.seenAs.followed_by) {
+        u.seenAs.followed_by = new Date().toISOString(); dirty = true;
+      }
+      if (dirty) { u.updatedAt = Date.now(); scheduleStoreWrite(); }
+    }
     if (!u || u.relation === rel) return h;
     u.relation = rel;
     u.updatedAt = Date.now();
+    // v0.12.25：关系账同时落一份到**浏览器存储**（relstore，SW 侧串行写）。
+    // 为什么：本仓的关系账原本只在宿主 SQLite 里（store_users.seen_as/relation），
+    // 一旦没有宿主 exe（本机 DB 放弃后）关系就断了。浏览器存储这一份让「我关注/回关/TA 关注我」
+    // 这类**关系事实**不依赖 exe —— 与参考插件「不是兄弟」同一思路（它的关系账全在浏览器存储）。
+    // ⚠ 写失败不许影响页面（这只是一份副本，权威判定仍在 xprobe_db.py 的 follow_starts，RL-22）：
+    //   异步发、不 await、失败只记一笔。
+    relStorePut(h, rel, 'btn');
+    // v0.12.24：**关系变了 ⇒ 当场重画这一行的徽标**。
+    // 之前只改了台账里的 relation 就走人 ⇒ 我点完「关注」/「回关」，页面上那颗标签还是旧的
+    // （用户原话：「我回关，不回刷新，互关还是他单向……现在不会更新」）。
+    // 徽标是显示件、relation 是账本，两边必须同拍更新 —— 否则用户看到的与库里记的不是一回事。
+    // badgeNeedScan 只置一位（真正重画在下一趟扫描/节拍里做），不在这里同步画（会打断扫描）。
+    badgeNeedScan = true;
+    relRenderSoon();
     scheduleStoreWrite();
     return h;
   }
@@ -1791,7 +1839,16 @@
     const prev = relLedger[b.id];
     const cur = b.state;
     // 首次见到的按钮不计数（那是浏览列表），但它的状态本身是真证据：这正是「哪些已关注」的来源
-    if (prev === undefined) { ledgerSet(b.id, cur); applyRelation(node, cur); return null; }
+    if (prev === undefined) {
+      // v0.12.24：首见时若按钮已是「正在关注」⇒ relation 补成 'following'（applyRelation 已经做了），
+      // 于是「我关注 TA 的时间」由**台账快照时刻**给出（seen_as.following / first_seen），
+      // **不**在这里补一条 follow 流水 ——
+      // ⚠ 首见就是浏览：满屏「正在关注」都记成动作会灌爆台账（core.js:1756 那条铁律：
+      //   「第一次见到某目标只登记基线，绝不计数」）。动作流水只认翻转（下面那段）。
+      ledgerSet(b.id, cur);
+      applyRelation(node, cur);
+      return null;
+    }
     if (prev === cur) return null;
     ledgerSet(b.id, cur);
     applyRelation(node, cur);
@@ -1809,6 +1866,10 @@
       suspect: !!suspect, from: prev + '→' + cur, w15: s.f15, w24: s.f24, max15: G15_MAX, max24: G24_MAX,
       over15: s.over15, over24: s.over24, gap: s.gap, rapid: s.rapid, cool: s.coolFull, rnd: s.rnd == null ? null : s.rnd, tab: tabName(),
     });
+    // v0.12.24：动作记完 ⇒ 当场安排徽标重画（这一行的关系标签要立刻变成新的那颗）。
+    // applyRelation 里已经置了 badgeNeedScan；这里再排一趟渲染，保证「点了就变」而不是「等下一拍」。
+    badgeNeedScan = true;
+    relRenderSoon();
     return dir;
   }
   // ---------- v0.8.7：观察器 = 「小批即时 / 突发排队」+ 一趟合并 DFS ----------
@@ -2133,7 +2194,17 @@
       groups: { uNum: gu.num.length, uBare: gu.bare.length, pNum: gp.num.length, pBare: gp.bare.length },
       users: gu.num.concat(gu.bare).slice(0, 12).map((k) => {
         const u = users[k] || {};
-        return { h: k, n: clip(u.name || '', 28), f: u.followers == null ? null : u.followers, fw: u.following == null ? null : u.following, fe: !!u.followersExact, rel: u.relation || '', own: !!u.own, seenAs: Object.keys(u.seenAs || {}), pts: (u.hist || []).length, sn: userHasNum(u) ? 1 : 0 };
+        // v0.12.24：seenAs 传**键→时刻**的整张表，不再只传键名。
+        // 为什么：之前 Object.keys() 把时刻全丢了 ⇒ 本机台账里 seen_as 只有 ["followers"] 这种
+        // 「在哪个列表见过」的标记，没有「什么时候见到的」⇒ 「TA 什么时候关注我的」这件事
+        // **从来没落过库**（用户原话：「本机没记录到他关注我的事件就也给一个初始化值」）。
+        // 落库后：seen_as.followers = ISO 时刻 ⇒ ① 面板能念出「TA 关注我于 X」；
+        // ② 每次再在粉丝列表里见到 TA 就把时刻刷新（见 collect 里 seenAs[bucket] 的更新），
+        //    于是「TA 取关后我又见到他」这件事能被时间线上的新时刻反映出来。
+        // 兼容：seenAs 可能是数组（老数据）⇒ 那时退化成 {桶名: 1}，至少键还在。
+        const sa = u.seenAs && typeof u.seenAs === 'object' ? u.seenAs : {};
+        const seenAsOut = Array.isArray(sa) ? sa.reduce((o, kk) => { o[kk] = 1; return o; }, {}) : sa;
+        return { h: k, n: clip(u.name || '', 28), f: u.followers == null ? null : u.followers, fw: u.following == null ? null : u.following, fe: !!u.followersExact, rel: u.relation || '', own: !!u.own, seenAs: seenAsOut, pts: (u.hist || []).length, sn: userHasNum(u) ? 1 : 0 };
       }),
       posts: gp.num.concat(gp.bare).slice(0, 8).map((k) => {
         const p = posts[k] || {};
@@ -2250,8 +2321,16 @@
       if (r.followState === 'following') u.relation = 'following';
       else if (r.followState === 'not_following' && r.followState) u.relation = r.followState;
       const bucket = snap.usersListTab || snap.listTab || snap.tab;
-      if ((bucket === 'following' || bucket === 'followers' || bucket === 'verified_followers') && !u.seenAs[bucket]) {
-        u.seenAs[bucket] = at; newOnes++;
+      // v0.12.24：seenAs[bucket] = 「我在这张列表里见到 TA 的时刻」。
+      // 之前只在**第一次**见到时写一次（!u.seenAs[bucket]），往后再也不更新 ⇒
+      // 「TA 关注我的时间」被钉死在第一次见到的那一刻，之后 TA 取关了我这边也看不出来。
+      // 现在：每次在列表里见到 TA 都把时刻刷新成 now ⇒ 时刻表示「最近一次确认 TA 在这张列表里」，
+      // 而不是「第一次见到」。这正是用户要的：「如果发现他关注我了，则自动更新当前时间」——
+      // 有了活跃更新的时刻，别人取关（TA 不再出现在我的粉丝列表里）才有对照的基线。
+      // 首次见到的那一次仍要单独记（newOnes 计数），但 seenAs 里存的是最近一次。
+      if (bucket === 'following' || bucket === 'followers' || bucket === 'verified_followers') {
+        if (!u.seenAs[bucket]) newOnes++;
+        u.seenAs[bucket] = now;
       }
       u.updatedAt = now; touched++;
     });
@@ -2432,7 +2511,19 @@
     const ks = Object.keys(series);
     if (ks.length > SER_MAX) {
       ks.sort((a, b) => (series[b].updatedAt || 0) - (series[a].updatedAt || 0));
-      for (let i = SER_MAX; i < ks.length; i++) delete series[ks[i]];
+      // v0.12.22（2026-11-13）：**自己那一行永不淘汰**。
+      // 原来只按 updatedAt 排序、砍掉最旧的那批 handle —— 自己的号平时不更新（不点自己主页
+      // 就没新点），于是被别人主页顶出 40 名之外就整段被删：预测页要的那串
+      // 「有效曝光累计读数」（eff）跟着没了，页面只剩一句「点不够（要 3 天以上…现在 0）」。
+      // 真机实测（宿主日志的 beacon 行）：08:09 序列还是 65 天，10:49 掉到 10 天。
+      // 自己的一年日线（IMP_MAX=365）本就该留着，别人的 120 天/人也是 —— 只有「名额」该让。
+      const own = ownHandle();
+      const keep = [];
+      if (own && series[own]) keep.push(own);
+      for (let i = 0; i < ks.length && keep.length < SER_MAX; i++) {
+        if (ks[i] !== own) keep.push(ks[i]);
+      }
+      for (const k of Object.keys(series)) if (keep.indexOf(k) < 0) delete series[k];
     }
     try { GM_setValue(SERIES_KEY, series); seriesErr = ''; }
     catch (e) { seriesErr = '序列写失败: ' + clip(e && e.message, 40); }
@@ -2956,14 +3047,21 @@
   function restoreDaysFromDb(v) {
     const lim = Math.max(1, Math.min(500, Number((v || {}).limit) || 500));
     return new Promise((resolve) => {
-      httpRequest('GET', SINK + '/db?q=day_rows&limit=' + lim, null, (err, status, text) => {
-        if (err) { resolve({ ok: false, err: '读不到本机库（sink 没在跑？双击 start-sink.bat，/ping 要回 sink-13）：' + clip(err.message || String(err), 50) }); return; }
-        let j = null;
-        try { j = JSON.parse(text); } catch (e) { resolve({ ok: false, err: '库回来的不是 JSON（HTTP ' + status + '）：' + clip(text, 50) }); return; }
-        if (!j || j.ok !== true) { resolve({ ok: false, err: '库说：' + clip((j && j.err) || ('HTTP ' + status), 70) }); return; }
-        const r = mergeDayRows(j.rows);
-        r.ok = true; r.err = ''; r.limit = lim;
-        resolve(r);
+      // v0.12.22（2026-11-13）：原来这里**直接打 SINK 的 HTTP**（http://127.0.0.1:8765/db）——
+      // 那个端口现在被 zhishu/search 占着、回的是 "Not Found"，所以「从本机库回填」这颗钮
+      // 一直是死的，预测页的历史也就再也回不来（宿主明明活着、库里 27 天日点都在）。
+      // 改走 SW 的 dbq：那条路 **native 优先**（宿主在就直接读 SQLite），HTTP 只是兜底 ——
+      // 和面板其它读库走的是同一条道（sw.js 的 xhr() 先试 nativeCall 再回退 httpFallback）。
+      dbAsk({ t: 'dbq', q: 'day_rows', limit: lim }, 12000).then((r) => {
+        if (!r) { resolve({ ok: false, err: '读不到本机库（宿主没起？或 SW 没回话）' }); return; }
+        if (r.ok === false) { resolve({ ok: false, err: '库说：' + clip(r.err || '查询被拒', 70) }); return; }
+        if (!Array.isArray(r.rows)) {
+          resolve({ ok: false, err: '回包没有 rows（宿主/sink 版本旧？跑一份新的 xprobe_db.py 再重装宿主）' });
+          return;
+        }
+        const res = mergeDayRows(r.rows);
+        res.ok = true; res.err = ''; res.limit = lim;
+        resolve(res);
       });
     });
   }
@@ -3985,7 +4083,8 @@
     else if (noBtn || fbF === false || (fbF !== true && rel === 'not_following')) out.state = 'not_following';
     // TA 关注我：桥带回 followed_by=true 也算（页面上那颗「他单向」标签认的就是这条判据）——
     // 名单行上的「←」跟上，别再出现「标签说 TA 关注你、名单里查无此人」。
-    out.them = fbY === true || !!(seen.followers || seen.verified_followers);
+    // v0.12.26：themSeenAt 把桥落账的 followed_by=true 也算进来（刷新后不再只靠 24h 内存缓存）
+    out.them = fbY === true || !!themSeenAt(k);
     return out;
   }
   function flistRows() {
@@ -4051,7 +4150,9 @@
     const fresh = (h) => { const rec = fiberRel.get(h); return (rec && nowT - rec.at <= REL_FIBER_TTL) ? rec : null; };
     Object.keys(users).forEach((h) => {
       const u = users[h];
-      if (!u || !u.seenAs || !u.seenAs.followers) return;
+      // v0.12.26：桥读数落账的 followed_by=true 与「进过粉丝列表」同一口井（themSeenAt）⇒
+      // 电脑端读到 TA 关注我之后，刷新页面「回」钮的待回账也不丢。
+      if (!u || !themSeenAt(h)) return;
       if (u.relation === 'following') return;
       const fv = fresh(h);
       if (fv && fv.following === true) return;   // 桥说你在关注 TA：互关，不进待回
@@ -4077,6 +4178,26 @@
   // 起算时间的台账实情：本机没有 per-handle 的关注动作账（guard.follows 只是限流时间戳），
   // 最接近的两笔是 users.seenAs.following（在自己关注列表里看到 TA 的那天）与 firstSeenAt
   //（第一次见到 TA）——正是用户定的口径：电脑记了用前者，手机关注的（电脑没记）退 firstSeenAt。
+  // v0.12.26 补一句要紧的：上面那两笔是**起算时刻**，不是「我关注 TA」这件事本身的凭据。
+  // 用户现场「明明没关注他，却显示了我关注他的时间」就栽在把两者混了：firstSeenAt 是刷到
+  // 任何一个人都会写的，无门槛拿它当关注日 ⇒ 每个陌生人都能领到一个「关注事件」日期。
+  // 唯一事实源 xprobe_db.py 的 follow_starts 估值组早写对了：只有 seen_as 里进过 following
+  // 或 relation='following' 的人才列，not_following 一律不列。下面这口井把同一条门槛搬进页面。
+  function hasFollowEvidence(h) {
+    const u = users[h] || {};
+    if (u.relation === 'not_following') return false;   // 已取关：旧关注痕迹不许冒充现在
+    return u.relation === 'following' || !!(u.seenAs && u.seenAs.following);
+  }
+  // TA 关注我的本地可读时刻：粉丝列表 / 认证粉丝列表（老台账）＋ X 回包 followed_by=true（v0.12.26 新落账）。
+  // 三者并成一口井，标签、待回账、名单、弹卡全走它 —— 修「标签说 TA 关注你、弹卡写本机没记到」。
+  // ⚠ 桶名纪律：followed_by 里既不含 followers 也不含 following。宿主 DB 用
+  //   seen_as LIKE '%followers%' / '%following%' 判「回关」「进过关注列表」，followersListSeen()
+  //   也靠 followers 桶判断「这台机器进过粉丝列表页」；桥读数若写进那两个桶，等于把
+  //   「读到 X 的一个关系字段」误当成「进过那两张列表页」，就会让「我单向」的推断对陌生人全成立。
+  function themSeenAt(h) {
+    const s = ((users[h] || {}).seenAs) || {};
+    return s.verified_followers || s.followers || s.followed_by || '';
+  }
   function noFollowbackOf(h) {
     const rec = fiberRel.get(h);
     if (rec && Date.now() - rec.at <= REL_FIBER_TTL && rec.followsYou === false) return 'bridge';
@@ -4085,15 +4206,20 @@
     } catch (e) { /* 台账读不了就不算 */ }
     return '';
   }
+  // v0.12.26：先问凭据、再给时间。以前任何一个在时间线刷到的 handle 都带 firstSeenAt，
+  // 于是没关注的人也能领到「关注事件 今天」——用户截图那个 bug 是必现的，不是个例。
+  // 现在与 xprobe_db.py 的 follow_starts 同口径：没凭据一律 null，firstSeenAt 只在
+  // **台账确实记着我关注 TA** 时才退为起算估值，并标 estimated，不再冒充精确关注时刻。
   function followStartAt(h) {
     const u = users[h] || {};
+    if (!hasFollowEvidence(h)) return null;
     if (u.seenAs && u.seenAs.following) {
-      return { day: dayOf(u.seenAs.following), ms: Date.parse(u.seenAs.following) || 0,
-        src: '本机在关注列表里看到 TA 的那天' };
+      return { day: dayOf(u.seenAs.following), ms: Date.parse(u.seenAs.following) || 0, estimated: false,
+        src: '本机第一次读到「正在关注」的那天（关注列表或页面按钮，不是 X 写着的精确时刻）' };
     }
     if (u.firstSeenAt) {
-      return { day: dayOf(new Date(u.firstSeenAt).toISOString()), ms: u.firstSeenAt,
-        src: '本机第一次见到 TA 的那天（手机关注的，电脑没记关注时间）' };
+      return { day: dayOf(new Date(u.firstSeenAt).toISOString()), ms: u.firstSeenAt, estimated: true,
+        src: '本机第一次见到 TA 的那天（手机关注的，电脑没记关注时间；台账记着我关注 TA，这是估值不是精确时刻）' };
     }
     return null;
   }
@@ -4113,6 +4239,10 @@
   function ensureFollowSeed(h) {
     if (!h) return false;
     try {
+      // v0.12.26：先要「我关注 TA」的凭据。noFollowbackOf 的推断分支只认「进过粉丝列表 +
+      // 没在列表里见过 TA」，这对**任何陌生人**都成立 ⇒ 以前每次重画都给陌生人种一个起算日，
+      // 再被 followStartAt 渲染成「关注事件」。凭据门槛一加，陌生人不种、也不反复写台账。
+      if (!hasFollowEvidence(h)) return false;
       if (!noFollowbackOf(h)) return false;     // 不是「我关注、TA 没回关」就不碰（互关/他单向/陌生人都不动）
       if (followStartAt(h)) return false;        // 已知道起算日，不覆盖
       const u = (users && users[h]) || touchUser(h, Date.now());
@@ -4129,10 +4259,15 @@
   // 不是 X 写着的精确关注时刻 —— 如实标口径，不编分钟级时间。
   function themFollowingAt(h) {
     const u = users[h] || {};
-    const iso = (u.seenAs && (u.seenAs.verified_followers || u.seenAs.followers)) || '';
+    const seen = u.seenAs || {};
+    // v0.12.26：桥带回的 followed_by=true 现在连时刻落账（seenAs.followed_by），所以
+    // 「TA 关注我」不再只有「进过粉丝列表页」这一条腿；没进过列表也能给本地可读到的最早痕迹。
+    const iso = themSeenAt(h);
     if (!iso) return null;
+    const fromList = !!(seen.verified_followers || seen.followers);
     return { day: dayOf(iso), ms: Date.parse(iso) || 0,
-      src: '本机在你的粉丝列表里看到 TA 的那天（TA 关注我的本地可读到的最早痕迹）' };
+      src: fromList ? '本机在你的粉丝列表里看到 TA 的那天（TA 关注我的本地可读到的最早痕迹）'
+        : '本机第一次读到 X 的 followed_by=true 的那天（TA 关注我的最早本地痕迹，不是 X 写着的精确时刻）' };
   }
   // v0.12.11：互关时间 = 我关注 TA 与 TA 关注我两件事里较晚的那一件 —— 只有两侧都成真，互关才成立。
   // 一侧本机没记到时按记到的那侧算，并标注「另一侧没记到」，不冒充精确互关时刻。
@@ -6012,6 +6147,29 @@
   //（store 实体/别的载荷里只有 followed_by，following 是 null）——整条覆盖会把台账里已经对的
   // 另一格抹成 null，互关的人 following 一丢、判定掉回本机旧账 ⇒ 满屏「没关注」。
   // 规矩与桥那头的 put() 同一条：boolean 才落格、null 不许抹已有读数；一格都没变就不动账（at 也不刷）。
+  // v0.12.26：桥读数**落账**。以前 relFiberMerge 只写内存 Map（24h TTL、刷新就丢），
+  // 手机点的关注 / TA 关注我，电脑端刷到此人时明明读到了，却一条账都不留 ⇒ 刷新又回原样。
+  // 现在每格真变了的读数连时刻一起写进 users.seenAs / relation，并给浏览器关系账留一份。
+  // 纪律：只修台账里已有的人（照 applyRelation：不凭空造行，免得把推荐位灌进「最该关注」）；
+  //      只记原始读数，不做判定（判定唯一写者仍是 xprobe_db.py 的 follow_starts，RL-22）。
+  function relReadingPersist(k, following, followsYou) {
+    const u = users[k];
+    if (!u) return;
+    if (!u.seenAs || typeof u.seenAs !== 'object') u.seenAs = {};
+    const nowIso = new Date().toISOString();
+    let dirty = false;
+    if (following === true) {
+      if (!u.seenAs.following) { u.seenAs.following = nowIso; dirty = true; }
+      if (u.relation !== 'following') { u.relation = 'following'; dirty = true; }
+    } else if (following === false) {
+      // 取关也落账：状态翻成 not_following，followStartAt 当场不再返回旧的关注日。
+      if (u.relation !== 'not_following') { u.relation = 'not_following'; dirty = true; }
+    }
+    // 桶名 followed_by 不含 followers / following：别让宿主 DB 的 LIKE 与
+    // followersListSeen() 把「读到 X 的一个关系字段」误当成「进过那两张列表页」。
+    if (followsYou === true && !u.seenAs.followed_by) { u.seenAs.followed_by = nowIso; dirty = true; }
+    if (dirty) { u.updatedAt = Date.now(); scheduleStoreWrite(); }
+  }
   function relFiberMerge(us) {
     const o = (us && typeof us === 'object') ? us : {};
     const ks = Object.keys(o);
@@ -6025,6 +6183,13 @@
       const y = typeof v.followsYou === 'boolean' ? v.followsYou : (old ? old.followsYou : null);
       if (old && old.following === f && old.followsYou === y) continue;
       fiberRel.set(k, { following: f, followsYou: y, at: Date.now() });
+      // v0.12.26：这一趟真变了的**格**连时刻落账（null 不落；另一格没变就不重写它）。
+      const df = typeof v.following === 'boolean' && (!old || old.following !== v.following);
+      const dy = typeof v.followsYou === 'boolean' && (!old || old.followsYou !== v.followsYou);
+      relReadingPersist(k, df ? v.following : null, dy ? v.followsYou : null);
+      // 浏览器关系账只记「我关注 TA」这一个方向（relstore 的 relationship 是单向快照）；
+      // followed_by 那一格由 users.seenAs.followed_by 承担，别把两种关系混进同一字段。
+      if (df) relStorePut(k, v.following ? 'following' : 'not_following', 'bridge');
       n++;
     }
     return n;
@@ -6118,7 +6283,9 @@
     const fbY = (fb && typeof fb.followsYou === 'boolean') ? fb.followsYou : null; // 桥说：TA 关注我
     // ① TA 关注我的三条腿（页面优先，桥次之，库兜底）
     const themBtn = /回关|Follow back/i.test(aria);
-    const themLedger = !!(seen.followers || seen.verified_followers);
+    // v0.12.26：桥读数落账后，即使 24h 内存缓存过期，台账这一格仍认「TA 关注我」——
+    // 用户报的「他关注我不自动更新 / 刷新又回原样」就断在这里。桶名纪律见 themSeenAt。
+    const themLedger = !!themSeenAt(k);
     const them = themBtn || fbY === true || themLedger;
     // ② 我关注 TA：页面那颗 -unfollow / 桥带回 following=true / 库里的 following。
     //    桥明确 following=false 时库不许翻案（X 当场带回的数据赢过旧账，与「页面读数赢过库」同一条纪律）。
@@ -6673,6 +6840,22 @@
         dot.style.background = blocked ? UI_TOK.red : (rel ? (REL_TAG[rel.key] || REL_TAG.mutual).color : UI_TOK.inkFaint);
         n.append(dot);
         n.title = '@' + h + (blocked ? ' · 已进本机拉黑名单（悬浮弹窗里点「取消拉黑」可解除）' : ' · 悬浮看关系详情、可拉黑');
+      } else if (blocked) {
+        // v0.12.24：拉黑态**自己有一颗标签**（红底红字「拉黑」）。
+        // 之前拉黑只给盒子描一圈红边，标签位仍走「关系判不出 ⇒ 空白占位盒」那条路
+        // ⇒ 用户看到的互关标签在拉黑时变成一个**空白方框**（真机 2026-11-13 现场）。
+        // 拉黑是本机自己写下的明确状态（不是「没读到」），所以画实心红标签，不该跟未知态共用空白盒。
+        const blk = el('span', { display: 'inline-block', flex: 'none' });
+        blk.style.cssText = 'display:inline-block;flex:none;border-radius:999px;padding:1px 6px;'
+          + 'font:11px ui-monospace,Consolas,monospace;line-height:14px;'
+          + 'background:' + UI_TOK.red + ';color:#fff;border:1px solid ' + UI_TOK.red + ';';
+        blk.textContent = '拉黑';
+        blk.setAttribute('data-role', 'blocked');
+        blk.setAttribute('data-h', h);
+        blk.style.marginInline = '0 0 0 ' + BADGE_GAP_PX + 'px';
+        blk.title = '@' + h + ' · 已进本机拉黑名单（悬浮弹窗里点「取消拉黑」可解除）';
+        n.append(blk);
+        n.title = '';
       } else if (rel) {
         // v0.12.12：badge 只承载关系状态标签（互关/他单向/我单向），拉黑钮已迁到悬浮弹窗。
         // 关系标签住进盒子，pointer-events:none（悬停用父级盒子接事件）；标题写关系详情（弹卡同款）。
@@ -6687,12 +6870,33 @@
         n.append(lb);
         n.title = '';
       } else {
-        // 空白状态（关系判不出）：给一枚中性占位盒（不写百分比、不编数，守 RL-11），保证可悬浮唤出弹窗去拉黑。
-        const ph = el('span', { display: 'inline-block', flex: 'none', width: '14px', height: '12px', borderRadius: '4px' });
-        ph.style.border = '1px solid ' + UI_TOK.line;
-        ph.style.marginInline = '0 0 0 ' + BADGE_GAP_PX + 'px';
+        // v0.12.24：**没有任何关系状态**（既没互关、也没单向、也没拉黑）⇒ 给一颗会闪的「待关注」提醒。
+        // 为什么改（用户原话：「如果没有任何状态，应该加一个醒目的闪烁的样式，提醒我关注」）：
+        // 之前是一枚 14×12 的中性占位盒，灰得像装饰品 ⇒ 「没状态」与「没画」在页面上分不清，
+        // 用户会以为标签没画出来而不是"这人值得回关"。现在：橙色胶囊 + 呼吸动画，一眼就看见。
+        // ⚠ 绝不把「没读到」说成「没关注」（RL-11）：文案只说「待确认」，不编关系结论。
+        // ⚠ 动画走 WAAPI 而不是往页面塞 <style>/@keyframes —— 项目红线不许给 X 的 DOM 多一个节点
+        //   （见 relChipEl 那段注释：参考插件也是这么做的）。WAAPI 缺席时标签照常，只是不闪。
+        const ph = el('span', { display: 'inline-block', flex: 'none' });
+        ph.style.cssText = 'display:inline-block;flex:none;border-radius:999px;padding:1px 6px;'
+          + 'font:11px ui-monospace,Consolas,monospace;line-height:14px;'
+          + 'border:1px solid ' + UI_TOK.amber + ';color:' + UI_TOK.amber + ';'
+          + 'background:rgba(241,184,75,.10);';
+        ph.textContent = '待关注';
         ph.setAttribute('data-role', 'ph');
-        ph.title = '@' + h + ' · 关系未知（本机没读到 TA 的关系读数）· 悬浮看详情、可拉黑';
+        ph.setAttribute('data-h', h);
+        ph.style.marginInline = '0 0 0 ' + BADGE_GAP_PX + 'px';
+        ph.title = '@' + h + ' · 关系待确认（本机还没读到 TA 的关系读数）· 悬浮看详情、可拉黑';
+        // 呼吸闪烁：只在用户没开「减少动态效果」时开（尊重系统偏好，也免得自检沙箱里挂个定时器）。
+        try {
+          const mqP = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+          if ((!mqP || !mqP.matches) && typeof ph.animate === 'function') {
+            ph.animate([{ opacity: 1, transform: 'scale(1)' },
+                        { opacity: 0.45, transform: 'scale(0.94)' },
+                        { opacity: 1, transform: 'scale(1)' }],
+                       { duration: 1600, iterations: Infinity, easing: 'ease-in-out' });
+          }
+        } catch (e) { /* 沙箱/老引擎没有 WAAPI：不闪，标签照常 */ }
         n.append(ph);
         n.title = '';
       }
@@ -7873,7 +8077,8 @@
   //   · 互关：给三段时间 —— 我关注 TA 的时间、TA 关注我的时间、互关时间（两者较晚的那一件）；不再写「未回关」。
   //   · 他单向（TA 关注我、我没回关）：给 TA 关注我的时间 + 差异（TA 已关注我多少天、我还没回关）。
   //   · 我单向（我关注 TA、TA 没回关）：给我关注 TA 的时间 + 他没回关我的时间差。
-  //   · 关系判不出：退回「关注事件」一行，不编未回关（避免互关的人误报「未回关 N 天」，见截图反馈）。
+  //   · 关系判不出：v0.12.26 起改成「关注记录：本机没记到关注记录」一行，不写日期、不编未回关。
+  //     （旧版这里退「关注事件」并把 firstSeenAt 当关注日 ⇒ 没关注的人也显示关注时间，用户现场报过。）
   // 数据全来自本机台账：百分比 = ratioInfo；我关注 TA = followStartAt；TA 关注我 = themFollowingAt；
   // 评论数本版不显示（本机与 pg16 都没有评论关系明细，见 handoff），留空不是编数。
   let relBadgePop = null, relBadgeHideT = 0, relBadgeKey = '';
@@ -7899,7 +8104,10 @@
       const nf = noFollowbackDays(k);
       lines.push(nf ? ('已关注 ' + nf.d + ' 天，TA 还没回关我') : '本机记不到未回关天数');
     } else {
-      lines.push(meF ? ('关注事件：' + meF.day + '开始关注 TA · ' + meF.src) : '关注事件：本机没有 TA 的关注起始记录');
+      // v0.12.26：关系判不出 ⇒ 不再叫「关注事件」。以前这里把 firstSeenAt 兜底直接写成
+      // 「开始关注 TA」，没关注的人也照写；现在 followStartAt 自带凭据门槛，话术也改诚实。
+      lines.push(meF ? ('本机台账记着我关注 TA：' + meF.day + ' · ' + meF.src)
+        : '本机没记到关注记录（不拿「第一次见到」冒充关注时间）');
     }
     return lines.filter(Boolean).join('\n');
   }
@@ -7928,9 +8136,11 @@
         ? (nf.d + ' 天（已关注 ' + nf.d + ' 天，TA 还没回关我）')
         : (meF ? '本机记到了关注日、但算不出未回关天数' : '本机没记到我关注 TA 的起算日')]);
     } else {
-      // 关系判不出：退回原「关注事件」一行，不编未回关（互关误报的根因就在这）
-      rows.push(['关注事件', meF ? meF.day : '—']);
-      if (meF) rows.push(['事件来源', meF.src]);
+      // v0.12.26：关系判不出 ⇒ 不再写「关注事件 + 日期」。用户现场「明明没关注他，却显示了
+      // 我关注他的时间」正是这一行：firstSeenAt 被当成关注日渲染出来，还配一句「手机关注的」。
+      // 现在 followStartAt 有凭据门槛，这里再把话术改成「有没有账」——没账就明说没账。
+      rows.push(['关注记录', meF ? ('本机台账记着 ' + meF.day) : '本机没记到关注记录']);
+      if (meF) rows.push(['记录来源', meF.src]);
     }
     return rows;
   }
@@ -8494,7 +8704,7 @@
       // v0.12.9：符号表 + 每颗单独显隐的口子（自检直接拨、直接读影子）
       FAB_GLYPH, FAB_GLYPH_IDS, FAB_VIS_IDS, FABVIS_KEY, fabVisGet, fabVisOn, setFabVis,
       fabGlyphPx, cdLetter, FAB_STY, UI_TOK, fabLab,
-      // v0.12.10 关系标签住进 badge 盒子 + 悬浮弹卡（关注百分比 + 关注事件）
+      // v0.12.10 关系标签住进 badge 盒子 + 悬浮弹卡（关注百分比 + 关注记录；v0.12.26 起不再叫关注事件）
       badgePaint, badgeSig, relBadgeRows, relBadgeTip, relBadgePopShow, relBadgePopHide, relBadgeSweep,
       __relPop: () => ({ on: !!(relBadgePop && relBadgePop.parentNode), key: relBadgeKey, text: relBadgePop ? relBadgePop.textContent : '' }),
       __fabDrag: () => ({ dragging: !!fabDrag, suppress: fabClickSuppress, folded: fabFoldGet(), pos: fabPosGet() }),
